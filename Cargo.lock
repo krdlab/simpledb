@@ -3,5 +3,14 @@
 version = 3
 
 [[package]]
+name = "byte"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cfd4a5b862cb6bfcaf4b9803e887a22393dd5c1ac9e2d1e131d516047eabd01"
+
+[[package]]
 name = "simpledb"
 version = "0.1.0"
+dependencies = [
+ "byte",
+]

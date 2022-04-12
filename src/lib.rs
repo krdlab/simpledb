@@ -3,6 +3,9 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+mod byte_buffer;
+mod page;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockId {
     filename: String,
