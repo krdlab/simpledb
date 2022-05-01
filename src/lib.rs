@@ -4,16 +4,17 @@
 // https://opensource.org/licenses/MIT
 
 mod byte_buffer;
+mod file_mgr;
 mod page;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockId {
     filename: String,
-    blknum: i32,
+    blknum: u64,
 }
 
 impl BlockId {
-    pub fn new(filename: &str, blknum: i32) -> Self {
+    pub fn new(filename: &str, blknum: u64) -> Self {
         BlockId {
             filename: filename.to_owned(),
             blknum,
@@ -24,7 +25,7 @@ impl BlockId {
         &self.filename
     }
 
-    pub fn number(&self) -> i32 {
+    pub fn number(&self) -> u64 {
         self.blknum
     }
 }

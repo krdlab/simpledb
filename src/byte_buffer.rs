@@ -7,6 +7,8 @@ use byte::ctx::Bytes;
 use byte::*;
 
 pub trait ByteBuffer {
+    fn get_limit(&self) -> usize;
+
     fn get_position(&self) -> usize;
     fn set_position(&mut self, pos: usize) -> byte::Result<()>;
 
@@ -29,15 +31,19 @@ pub struct WrappedBuffer<'a> {
 }
 
 impl AllocatedBuffer {
-    pub fn new(capacity: usize) -> Box<dyn ByteBuffer> {
-        Box::new(AllocatedBuffer {
+    pub fn new(capacity: usize) -> Self {
+        AllocatedBuffer {
             buf: vec![0u8; capacity],
             pos: 0,
-        })
+        }
     }
 }
 
 impl ByteBuffer for AllocatedBuffer {
+    fn get_limit(&self) -> usize {
+        self.buf.len()
+    }
+
     fn get_position(&self) -> usize {
         self.pos
     }
@@ -87,12 +93,16 @@ impl ByteBuffer for AllocatedBuffer {
 }
 
 impl<'a> WrappedBuffer<'a> {
-    pub fn new(bytes: &'a mut [u8]) -> Box<dyn ByteBuffer + 'a> {
-        Box::new(WrappedBuffer { buf: bytes, pos: 0 })
+    pub fn new(bytes: &'a mut [u8]) -> Self {
+        WrappedBuffer { buf: bytes, pos: 0 }
     }
 }
 
 impl<'a> ByteBuffer for WrappedBuffer<'a> {
+    fn get_limit(&self) -> usize {
+        self.buf.len()
+    }
+
     fn get_position(&self) -> usize {
         self.pos
     }
@@ -196,7 +206,10 @@ mod tests {
         Ok(())
     }
 
-    fn test_put_and_get_i32<'a>(b: &mut Box<dyn ByteBuffer + 'a>) -> byte::Result<()> {
+    fn test_put_and_get_i32<'a, B>(b: &mut B) -> byte::Result<()>
+    where
+        B: ByteBuffer,
+    {
         b.put_i32(0x12345678)?;
         assert_eq!(b.get_position(), 4);
 
@@ -213,7 +226,10 @@ mod tests {
         Ok(())
     }
 
-    fn test_put_and_get_bytes<'a>(b: &mut Box<dyn ByteBuffer + 'a>) -> byte::Result<()> {
+    fn test_put_and_get_bytes<'a, B>(b: &mut B) -> byte::Result<()>
+    where
+        B: ByteBuffer,
+    {
         let src: [u8; 5] = [1, 2, 3, 4, 5];
         b.put(&src)?;
         assert_eq!(b.get_position(), src.len());
