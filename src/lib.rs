@@ -5,6 +5,7 @@
 
 mod byte_buffer;
 mod file_mgr;
+mod log_mgr;
 mod page;
 
 #[derive(Debug, PartialEq, Eq)]
