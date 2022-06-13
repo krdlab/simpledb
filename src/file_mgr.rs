@@ -3,18 +3,49 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use crate::{byte_buffer::ByteBuffer, page::Page, BlockId};
 use std::{
     cell::RefCell,
     collections::HashMap,
     fs::{self, File},
-    io::{Result, Seek, SeekFrom, Write},
+    io::{Read, Result, Seek, SeekFrom, Write},
     num::TryFromIntError,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Mutex,
 };
 
-use crate::{page::Page, BlockId};
+trait FileChannel {
+    fn read_to<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()>;
+    fn write_from<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()>;
+}
+
+impl FileChannel for File {
+    fn read_to<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()> {
+        let mut buf = bb.borrow_mut();
+
+        let rem = buf.get_limit() - buf.get_position();
+        let mut bytes = vec![0u8; rem];
+        self.read(&mut bytes).unwrap();
+
+        buf.put(&bytes).unwrap();
+        Ok(())
+    }
+
+    fn write_from<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()> {
+        let mut buf = bb.borrow_mut();
+
+        let pos = buf.get_position();
+        let rem = buf.get_limit() - pos;
+        let mut bytes = vec![0u8; rem];
+        buf.get(&mut bytes).unwrap();
+
+        self.write(&bytes)?;
+
+        buf.set_position(pos).unwrap();
+        Ok(())
+    }
+}
 
 pub struct FileMgr {
     db_dir_path: PathBuf,
@@ -37,6 +68,10 @@ impl FileMgr {
         }
     }
 
+    pub fn blocksize(&self) -> usize {
+        self.blocksize
+    }
+
     pub fn is_new(&self) -> bool {
         self.is_new
     }
@@ -51,9 +86,17 @@ impl FileMgr {
         } else {
             let path = self.db_dir_path.join(filename);
             let file = if path.exists() {
-                Rc::new(RefCell::new(File::open(path)?))
+                Rc::new(RefCell::new(
+                    File::options().read(true).append(true).open(path)?,
+                ))
             } else {
-                Rc::new(RefCell::new(File::create(path)?))
+                Rc::new(RefCell::new(
+                    File::options()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .open(path)?,
+                ))
             };
             ofs.insert(filename.to_string(), file.clone());
             file.clone()
@@ -66,23 +109,25 @@ impl FileMgr {
         Ok(SeekFrom::Start(block.number() * blocksize))
     }
 
-    pub fn read(&self, block: &BlockId, page: &Page) -> Result<()> {
+    pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<()> {
         let _ = self.open_files.lock().unwrap();
         let file = self.get_file(block.filename())?;
 
         let pos = self.calc_seek_pos(block).unwrap();
         file.borrow_mut().seek(pos)?;
-        page.read_from_file(file.clone());
+
+        file.borrow_mut().read_to(page.contents())?;
         Ok(())
     }
 
-    pub fn write(&self, block: &BlockId, page: &Page) -> Result<()> {
+    pub fn write(&self, block: &BlockId, page: &mut Page) -> Result<()> {
         let _ = self.open_files.lock().unwrap();
         let f = self.get_file(block.filename())?;
 
         let pos = self.calc_seek_pos(block).unwrap();
         f.borrow_mut().seek(pos)?;
-        page.write_to_file(f.clone());
+
+        f.borrow_mut().write_from(page.contents())?;
         Ok(())
     }
 
@@ -102,7 +147,7 @@ impl FileMgr {
         Ok(block)
     }
 
-    fn length(&self, filename: &str) -> Result<u64> {
+    pub(in crate) fn length(&self, filename: &str) -> Result<u64> {
         let blocksize = u64::try_from(self.blocksize).unwrap();
         let f = self.get_file(filename)?;
         Ok(f.clone().borrow().metadata()?.len() / blocksize)
@@ -115,6 +160,18 @@ mod tests {
     use tempfile::tempdir;
 
     const TEST_FILE: &str = "test.db";
+
+    // #[test]
+    // fn test_write() -> Result<()> {
+    //     let dir = tempdir()?;
+    //     assert_eq!(dir.path().exists(), true);
+    //     let fm = FileMgr::new(dir.path(), 4096);
+
+    //     fm.write(block, page)?;
+
+    //     dir.close()?;
+    //     Ok(())
+    // }
 
     #[test]
     fn test_is_new_if_dir_exists() -> Result<()> {
