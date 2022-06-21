@@ -3,10 +3,23 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use std::string::FromUtf8Error;
 use std::vec;
 use std::{cell::RefCell, rc::Rc};
+use thiserror::Error;
 
 use crate::byte_buffer::*;
+
+#[derive(Debug, Error)]
+pub enum PageError {
+    #[error("{0:?}")]
+    Byte(#[from] ByteBufferError),
+
+    #[error("{0:?}")]
+    InvalidUtf8(#[from] FromUtf8Error),
+}
+
+pub type Result<T> = core::result::Result<T, PageError>;
 
 pub struct Page<'a> {
     buf: Rc<RefCell<Box<dyn ByteBuffer + 'a>>>,
@@ -25,22 +38,22 @@ impl<'a> Page<'a> {
         }
     }
 
-    pub fn set_i32(&mut self, offset: usize, n: i32) -> byte::Result<()> {
-        self.buf.borrow_mut().put_i32_to(offset, n)
+    pub fn set_i32(&mut self, offset: usize, n: i32) -> Result<()> {
+        Ok(self.buf.borrow_mut().put_i32_to(offset, n)?)
     }
 
-    pub fn get_i32(&self, offset: usize) -> byte::Result<i32> {
-        self.buf.borrow().get_i32_from(offset)
+    pub fn get_i32(&self, offset: usize) -> Result<i32> {
+        Ok(self.buf.borrow().get_i32_from(offset)?)
     }
 
-    pub fn set_bytes(&mut self, offset: usize, bytes: &[u8]) -> byte::Result<()> {
+    pub fn set_bytes(&mut self, offset: usize, bytes: &[u8]) -> Result<()> {
         let mut bb = self.buf.borrow_mut();
         bb.set_position(offset)?;
         bb.put_i32(bytes.len().try_into().unwrap())?;
-        bb.put(bytes)
+        Ok(bb.put(bytes)?)
     }
 
-    pub fn get_bytes(&mut self, offset: usize) -> byte::Result<Vec<u8>> {
+    pub fn get_bytes(&mut self, offset: usize) -> Result<Vec<u8>> {
         let mut bb = self.buf.borrow_mut();
 
         bb.set_position(offset)?;
@@ -51,15 +64,17 @@ impl<'a> Page<'a> {
         Ok(res)
     }
 
-    pub fn set_string(&mut self, offset: usize, s: &str) -> byte::Result<()> {
+    pub fn set_string(&mut self, offset: usize, s: &str) -> Result<()> {
         let bs = s.as_bytes();
         self.set_bytes(offset, bs)
     }
 
-    pub fn get_string(&mut self, offset: usize) -> byte::Result<String> {
+    pub fn get_string(&mut self, offset: usize) -> Result<String> {
         let bs = self.get_bytes(offset)?;
-        let str = String::from_utf8(bs).unwrap();
-        Ok(str)
+        match String::from_utf8(bs) {
+            Ok(str) => Ok(str),
+            Err(err) => Err(PageError::InvalidUtf8(err)),
+        }
     }
 
     fn max_length(strlen: usize) -> usize {
@@ -67,9 +82,9 @@ impl<'a> Page<'a> {
         4 + strlen * bytes_per_char
     }
 
-    pub(in crate) fn contents(&mut self) -> Rc<RefCell<Box<dyn ByteBuffer + 'a>>> {
-        self.buf.borrow_mut().set_position(0).unwrap();
-        self.buf.clone()
+    pub(in crate) fn contents(&mut self) -> Result<Rc<RefCell<Box<dyn ByteBuffer + 'a>>>> {
+        self.buf.borrow_mut().set_position(0)?;
+        Ok(self.buf.clone())
     }
 }
 
@@ -78,7 +93,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_for_data_set_and_get_i32() -> byte::Result<()> {
+    fn test_error_incomplete() {
+        let mut p = Page::for_data(1);
+
+        let result = p.set_i32(0, 0x1234);
+        assert_eq!(result.is_err(), true);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("{:?}", ByteBufferError(byte::Error::Incomplete))
+        );
+    }
+
+    #[test]
+    fn test_for_data_set_and_get_i32() -> Result<()> {
         let mut p = Page::for_data(8);
 
         p.set_i32(3, 0x12345678)?;
@@ -88,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn test_for_data_set_and_get_bytes() -> byte::Result<()> {
+    fn test_for_data_set_and_get_bytes() -> Result<()> {
         let mut p = Page::for_data(10);
 
         let bytes = [0x1, 0x2, 0x3];
@@ -99,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn test_for_data_set_and_get_string() -> byte::Result<()> {
+    fn test_for_data_set_and_get_string() -> Result<()> {
         let mut p = Page::for_data(40);
 
         p.set_string(0, "abcd")?;

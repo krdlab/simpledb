@@ -3,18 +3,38 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use crate::{byte_buffer::ByteBuffer, page::Page, BlockId};
+use crate::{
+    byte_buffer::{ByteBuffer, ByteBufferError},
+    page::{Page, PageError},
+    BlockId,
+};
 use std::{
     cell::RefCell,
     collections::HashMap,
     fs::{self, File},
-    io::{Read, Result, Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     num::TryFromIntError,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Mutex,
 };
+use thiserror::Error;
 
+#[derive(Debug, Error)]
+pub enum FileMgrError {
+    #[error("{0:?}")]
+    IO(#[from] std::io::Error),
+
+    #[error("{0:?}")]
+    Byte(#[from] ByteBufferError),
+
+    #[error("{0:?}")]
+    Page(#[from] PageError),
+}
+
+pub type Result<T> = core::result::Result<T, FileMgrError>;
+
+// TODO: rename this to FileExt and move into fileext.rs?
 trait FileChannel {
     fn read_to<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()>;
     fn write_from<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()>;
@@ -26,9 +46,9 @@ impl FileChannel for File {
 
         let rem = buf.get_limit() - buf.get_position();
         let mut bytes = vec![0u8; rem];
-        self.read(&mut bytes).unwrap();
+        self.read(&mut bytes)?;
 
-        buf.put(&bytes).unwrap();
+        buf.put(&bytes)?;
         Ok(())
     }
 
@@ -38,11 +58,11 @@ impl FileChannel for File {
         let pos = buf.get_position();
         let rem = buf.get_limit() - pos;
         let mut bytes = vec![0u8; rem];
-        buf.get(&mut bytes).unwrap();
+        buf.get(&mut bytes)?;
 
         self.write(&bytes)?;
 
-        buf.set_position(pos).unwrap();
+        buf.set_position(pos)?;
         Ok(())
     }
 }
@@ -58,7 +78,7 @@ impl FileMgr {
     pub fn new(db_dir_path: &Path, blocksize: usize) -> Self {
         let is_new = !db_dir_path.exists();
         if is_new {
-            fs::create_dir_all(db_dir_path).unwrap();
+            fs::create_dir_all(db_dir_path).expect("failed to create db directory");
         }
         FileMgr {
             db_dir_path: db_dir_path.to_path_buf(),
@@ -116,7 +136,7 @@ impl FileMgr {
         let pos = self.calc_seek_pos(block).unwrap();
         file.borrow_mut().seek(pos)?;
 
-        file.borrow_mut().read_to(page.contents())?;
+        file.borrow_mut().read_to(page.contents()?)?;
         Ok(())
     }
 
@@ -127,7 +147,7 @@ impl FileMgr {
         let pos = self.calc_seek_pos(block).unwrap();
         f.borrow_mut().seek(pos)?;
 
-        f.borrow_mut().write_from(page.contents())?;
+        f.borrow_mut().write_from(page.contents()?)?;
         Ok(())
     }
 

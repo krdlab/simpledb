@@ -3,10 +3,31 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use crate::{file_mgr::FileMgr, page::Page, BlockId};
-use std::{io::Result, mem::size_of};
+use crate::{
+    file_mgr::{FileMgr, FileMgrError},
+    page::{Page, PageError},
+    BlockId,
+};
+use std::mem::size_of;
+use thiserror::Error;
 
 const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32;
+
+#[derive(Debug, Error)]
+pub enum LogMgrError {
+    #[error("{0:?}")]
+    IO(#[from] std::io::Error),
+
+    #[error("{0:?}")]
+    Page(#[from] PageError),
+
+    #[error("{0:?}")]
+    FileMgr(#[from] FileMgrError),
+}
+
+pub type Result<T> = core::result::Result<T, LogMgrError>;
+
+type LSN = u64;
 
 pub struct LogMgr<'p> {
     fm: FileMgr,
@@ -16,8 +37,6 @@ pub struct LogMgr<'p> {
     latest_lsn: LSN,
     last_saved_lsn: LSN,
 }
-
-type LSN = u64;
 
 impl<'p> LogMgr<'p> {
     pub fn new(fm: FileMgr, logfile: &str) -> Self {
@@ -36,12 +55,16 @@ impl<'p> LogMgr<'p> {
         };
 
         if logsize == 0 {
-            lm.currentblk = Some(lm.append_new_block().unwrap());
+            lm.currentblk = Some(
+                lm.append_new_block()
+                    .expect("failed to call append_new_block"),
+            );
         } else {
-            lm.currentblk = Some(BlockId::new(logfile, logsize - 1));
+            let block = BlockId::new(logfile, logsize - 1);
             lm.fm
-                .read(&lm.currentblk.as_ref().unwrap(), &mut lm.logpage)
-                .unwrap();
+                .read(&block, &mut lm.logpage)
+                .expect(format!("failed to read the block at {:?}", block).as_str());
+            lm.currentblk = Some(block);
         }
 
         lm
@@ -50,25 +73,25 @@ impl<'p> LogMgr<'p> {
     fn append_new_block(&mut self) -> Result<BlockId> {
         let block = self.fm.append(&self.logfile)?;
         let blocksize = self.fm.blocksize().try_into().unwrap();
-        self.logpage.set_i32(0, blocksize).unwrap();
+        self.logpage.set_i32(0, blocksize)?;
         self.fm.write(&block, &mut self.logpage)?;
         Ok(block)
     }
 
     pub fn apppend(&mut self, logrec: &[u8]) -> Result<LSN> {
-        let mut boundary = self.logpage.get_i32(0).unwrap();
+        let mut boundary = self.logpage.get_i32(0)?;
         let recsize: i32 = logrec.len().try_into().unwrap();
         let bytesneeded: i32 = recsize + I32_BYTE_SIZE;
         if boundary - bytesneeded < I32_BYTE_SIZE {
             self._flush()?;
-            self.currentblk = Some(self.append_new_block().unwrap());
-            boundary = self.logpage.get_i32(0).unwrap();
+            self.currentblk = Some(self.append_new_block()?);
+            boundary = self.logpage.get_i32(0)?;
         }
 
         let recpos = boundary - bytesneeded;
         let recpos_usize = usize::try_from(boundary - bytesneeded).unwrap();
-        self.logpage.set_bytes(recpos_usize, logrec).unwrap();
-        self.logpage.set_i32(0, recpos).unwrap();
+        self.logpage.set_bytes(recpos_usize, logrec)?;
+        self.logpage.set_i32(0, recpos)?;
         self.latest_lsn += 1;
         Ok(self.latest_lsn)
     }
@@ -119,8 +142,13 @@ impl<'lm> LogIterator<'lm> {
     }
 
     fn move_to_block(&mut self, block: &BlockId) {
-        self.fm.read(block, &mut self.page).expect("TODO");
-        self.boundary = self.page.get_i32(0).unwrap();
+        self.fm
+            .read(block, &mut self.page)
+            .expect(format!("failed to read the block at {:?}", block).as_str());
+        self.boundary = self
+            .page
+            .get_i32(0)
+            .expect("failed to get a boundary value from the current page");
         self.currentpos = self.boundary;
     }
 
@@ -133,6 +161,9 @@ impl Iterator for LogIterator<'_> {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !self.has_next() {
+            return None;
+        }
         if self.currentpos == self.fm.blocksize().try_into().unwrap() {
             let newblock = BlockId::new(self.block.filename(), self.block.number() - 1);
             self.move_to_block(&newblock);
@@ -141,7 +172,7 @@ impl Iterator for LogIterator<'_> {
         let rec = self
             .page
             .get_bytes(self.currentpos.try_into().unwrap())
-            .unwrap();
+            .expect(format!("failed to get a record at {}", self.currentpos).as_str());
         self.currentpos += I32_BYTE_SIZE + i32::try_from(rec.len()).unwrap();
         Some(rec)
     }
