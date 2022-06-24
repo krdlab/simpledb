@@ -27,7 +27,7 @@ pub enum LogMgrError {
 
 pub type Result<T> = core::result::Result<T, LogMgrError>;
 
-type LSN = u64;
+pub type LSN = i64;
 
 pub struct LogMgr<'p> {
     fm: FileMgr,
