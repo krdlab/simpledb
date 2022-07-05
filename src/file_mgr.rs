@@ -10,7 +10,7 @@ use crate::{
 };
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
     num::TryFromIntError,
@@ -68,10 +68,15 @@ impl FileChannel for File {
 }
 
 pub struct FileMgr {
-    db_dir_path: PathBuf,
     blocksize: usize,
     is_new: bool,
-    open_files: Mutex<HashMap<String, Rc<RefCell<File>>>>,
+    data: Mutex<FileMgrData>,
+}
+
+struct FileMgrData {
+    db_dir_path: PathBuf,
+    blocksize: usize,
+    open_files: HashMap<String, File>,
 }
 
 impl FileMgr {
@@ -81,10 +86,9 @@ impl FileMgr {
             fs::create_dir_all(db_dir_path).expect("failed to create db directory");
         }
         FileMgr {
-            db_dir_path: db_dir_path.to_path_buf(),
             blocksize,
             is_new,
-            open_files: Mutex::new(HashMap::new()),
+            data: Mutex::new(FileMgrData::new(db_dir_path, blocksize)),
         }
     }
 
@@ -96,81 +100,108 @@ impl FileMgr {
         self.is_new
     }
 
-    fn get_file(&self, filename: &str) -> Result<Rc<RefCell<File>>> {
-        let mut ofs = self
-            .open_files
-            .lock()
-            .expect("failed to lock the map of opened files");
-        let file = if let Some(file) = ofs.get_mut(filename) {
-            file.clone()
-        } else {
-            let path = self.db_dir_path.join(filename);
-            let file = if path.exists() {
-                Rc::new(RefCell::new(
-                    File::options().read(true).append(true).open(path)?,
-                ))
-            } else {
-                Rc::new(RefCell::new(
-                    File::options()
-                        .read(true)
-                        .write(true)
-                        .create(true)
-                        .open(path)?,
-                ))
-            };
-            ofs.insert(filename.to_string(), file.clone());
-            file.clone()
-        };
-        return Ok(file);
-    }
-
-    fn calc_seek_pos(&self, block: &BlockId) -> std::result::Result<SeekFrom, TryFromIntError> {
-        let blocksize = u64::try_from(self.blocksize)?;
-        Ok(SeekFrom::Start(block.number() * blocksize))
-    }
-
     pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<()> {
-        let _ = self.open_files.lock().unwrap();
-        let file = self.get_file(block.filename())?;
-
-        let pos = self.calc_seek_pos(block).unwrap();
-        file.borrow_mut().seek(pos)?;
-
-        file.borrow_mut().read_to(page.contents()?)?;
-        Ok(())
+        let mut data = self.data.lock().unwrap();
+        data.read(block, page)
     }
 
     pub fn write(&self, block: &BlockId, page: &mut Page) -> Result<()> {
-        let _ = self.open_files.lock().unwrap();
-        let f = self.get_file(block.filename())?;
-
-        let pos = self.calc_seek_pos(block).unwrap();
-        f.borrow_mut().seek(pos)?;
-
-        f.borrow_mut().write_from(page.contents()?)?;
-        Ok(())
+        let mut data = self.data.lock().unwrap();
+        data.write(block, page)
     }
 
     pub fn append(&self, filename: &str) -> Result<BlockId> {
-        let _ = self.open_files.lock().unwrap();
+        let mut data = self.data.lock().unwrap();
+        data.append(filename)
+    }
 
+    pub(in crate) fn length(&self, filename: &str) -> Result<u64> {
+        let mut data = self.data.lock().unwrap();
+        data.length(filename)
+    }
+}
+
+impl FileMgrData {
+    pub(in crate) fn new(db_dir_path: &Path, blocksize: usize) -> Self {
+        Self {
+            db_dir_path: db_dir_path.to_path_buf(),
+            blocksize,
+            open_files: HashMap::new(),
+        }
+    }
+
+    fn open_file(path: &Path) -> Result<File> {
+        if path.exists() {
+            Ok(File::options().read(true).append(true).open(path)?)
+        } else {
+            Ok(File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(path)?)
+        }
+    }
+
+    fn get_file(&mut self, filename: &str) -> Result<&mut File> {
+        let file = match self.open_files.entry(filename.to_string()) {
+            Entry::Occupied(o) => o.into_mut(),
+            Entry::Vacant(v) => {
+                let path = self.db_dir_path.join(filename);
+                let file = Self::open_file(&path)?;
+                v.insert(file)
+            }
+        };
+        Ok(file)
+    }
+
+    fn calc_seek_pos(
+        blocksize: usize,
+        block: &BlockId,
+    ) -> std::result::Result<SeekFrom, TryFromIntError> {
+        let blocksize = u64::try_from(blocksize)?;
+        Ok(SeekFrom::Start(block.number() * blocksize))
+    }
+
+    fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
+        let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
+
+        let file = self.get_file(block.filename())?;
+        file.seek(pos)?;
+
+        file.read_to(page.contents()?)?;
+        Ok(())
+    }
+
+    fn write(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
+        let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
+
+        let f = self.get_file(block.filename())?;
+        f.seek(pos)?;
+
+        f.write_from(page.contents()?)?;
+        Ok(())
+    }
+
+    fn append(&mut self, filename: &str) -> Result<BlockId> {
+        let blocksize = self.blocksize;
         let newblocknum = self.length(filename)?;
         let block = BlockId::new(filename, newblocknum);
 
-        let b = vec![0u8; self.blocksize];
         let file = self.get_file(filename)?;
-        let blocksize = u64::try_from(self.blocksize).unwrap();
-        file.borrow_mut()
-            .seek(SeekFrom::Start(block.number() * blocksize))?;
-        file.borrow_mut().write(&b)?;
+        let pos = FileMgrData::calc_seek_pos(blocksize, &block).unwrap();
+        file.seek(pos)?;
+
+        let b = vec![0u8; blocksize];
+        file.write(&b)?;
 
         Ok(block)
     }
 
-    pub(in crate) fn length(&self, filename: &str) -> Result<u64> {
+    fn length(&mut self, filename: &str) -> Result<u64> {
         let blocksize = u64::try_from(self.blocksize).unwrap();
-        let f = self.get_file(filename)?;
-        Ok(f.clone().borrow().metadata()?.len() / blocksize)
+
+        let file = self.get_file(filename)?;
+        Ok(file.metadata()?.len() / blocksize)
     }
 }
 

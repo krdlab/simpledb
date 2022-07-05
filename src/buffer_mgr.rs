@@ -9,35 +9,47 @@ use crate::{
     page::Page,
     BlockId,
 };
+use std::{
+    iter::repeat_with,
+    sync::{Arc, Condvar, Mutex},
+    time::{Duration, SystemTime},
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BufferError {
     #[error("{0:?}")]
+    IO(#[from] std::io::Error),
+
+    #[error("{0:?}")]
     LogMgr(#[from] LogMgrError),
 
     #[error("{0:?}")]
     FileMgr(#[from] FileMgrError),
+
+    #[error("unpinned buffer not found")]
+    Aborted,
 }
 
 pub type Result<T> = core::result::Result<T, BufferError>;
 
-pub struct Buffer<'fm, 'lm> {
-    fm: &'fm FileMgr,
-    lm: &'lm mut LogMgr<'lm>,
-    contents: Page<'fm>,
+pub struct Buffer<'b, 'lm> {
+    fm: Arc<FileMgr>,
+    lm: Arc<Mutex<LogMgr<'lm>>>,
+    contents: Page<'b>,
     blk: Option<BlockId>,
     pins: i32,
     txnum: i32,
     lsn: LSN,
 }
 
-impl<'fm, 'lm> Buffer<'fm, 'lm> {
-    pub fn new(fm: &'fm FileMgr, lm: &'lm mut LogMgr<'lm>) -> Self {
+impl<'b, 'lm> Buffer<'b, 'lm> {
+    pub fn new(fm: Arc<FileMgr>, lm: Arc<Mutex<LogMgr<'lm>>>) -> Self {
+        let blocksize = fm.blocksize();
         Self {
             fm,
             lm,
-            contents: Page::for_data(fm.blocksize()),
+            contents: Page::for_data(blocksize),
             blk: None,
             pins: 0,
             txnum: -1,
@@ -45,8 +57,8 @@ impl<'fm, 'lm> Buffer<'fm, 'lm> {
         }
     }
 
-    pub fn contents(&self) -> &Page<'fm> {
-        &self.contents
+    pub fn contents(&mut self) -> &mut Page<'b> {
+        &mut self.contents
     }
 
     pub fn block(&self) -> &Option<BlockId> {
@@ -79,7 +91,8 @@ impl<'fm, 'lm> Buffer<'fm, 'lm> {
 
     pub(in crate) fn flush(&mut self) -> Result<()> {
         if self.txnum >= 0 {
-            self.lm.flush(self.lsn)?;
+            let mut lm = self.lm.lock().unwrap();
+            lm.flush(self.lsn)?;
             self.fm
                 .write(self.blk.as_ref().unwrap(), &mut self.contents)?;
             self.txnum = -1;
@@ -93,5 +106,166 @@ impl<'fm, 'lm> Buffer<'fm, 'lm> {
 
     pub(in crate) fn unpin(&mut self) {
         self.pins -= 1;
+    }
+}
+
+pub struct BufferMgr<'b, 'lm> {
+    data: Mutex<BufferMgrData<'b, 'lm>>,
+    waiting: Condvar,
+}
+
+struct BufferMgrData<'b, 'lm> {
+    bufferpool: Vec<Arc<Mutex<Buffer<'b, 'lm>>>>,
+    num_available: usize,
+}
+
+const MAX_TIME: u64 = 10_000; // 10 seconds
+
+impl<'b, 'lm> BufferMgr<'b, 'lm> {
+    pub fn new(fm: Arc<FileMgr>, lm: Arc<Mutex<LogMgr<'lm>>>, numbuffs: usize) -> Self {
+        let pool = repeat_with(|| Arc::new(Mutex::new(Buffer::new(fm.clone(), lm.clone()))))
+            .take(numbuffs)
+            .collect::<Vec<_>>();
+        Self {
+            data: Mutex::new(BufferMgrData::<'b, 'lm> {
+                bufferpool: pool,
+                num_available: numbuffs,
+            }),
+            waiting: Condvar::new(),
+        }
+    }
+
+    pub fn available(&self) -> usize {
+        let data = self.data.lock().unwrap();
+        data.num_available
+    }
+
+    pub fn flush_all(&mut self, txnum: i32) -> Result<()> {
+        let data = self.data.lock().unwrap();
+        for buff in &data.bufferpool {
+            let mut b = buff.lock().unwrap();
+            if b.modifying_tx() == txnum {
+                b.flush()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn unpin(&mut self, buff: Arc<Mutex<Buffer<'b, 'lm>>>) {
+        let mut data = self.data.lock().unwrap();
+
+        let mut b = buff.lock().unwrap();
+        b.unpin();
+        if !b.is_pinned() {
+            data.num_available += 1;
+            self.waiting.notify_all();
+        }
+    }
+
+    pub fn pin(&mut self, blk: &BlockId) -> Result<Arc<Mutex<Buffer<'b, 'lm>>>> {
+        let mut data = self.data.lock().unwrap();
+
+        let begintime = SystemTime::now();
+
+        let mut buff = data.try_to_pin(blk);
+        while buff.is_none() && !self.waiting_too_long(begintime) {
+            data = self
+                .waiting
+                .wait_timeout(data, Duration::from_millis(MAX_TIME))
+                .unwrap()
+                .0;
+            buff = data.try_to_pin(blk);
+        }
+
+        match buff {
+            Some(found) => Ok(found.clone()),
+            None => Err(BufferError::Aborted),
+        }
+    }
+
+    fn waiting_too_long(&self, begintime: SystemTime) -> bool {
+        SystemTime::now()
+            .duration_since(begintime)
+            .unwrap()
+            .as_millis()
+            > MAX_TIME.into()
+    }
+}
+
+impl<'fm, 'lm> BufferMgrData<'fm, 'lm> {
+    pub(in crate) fn try_to_pin(&mut self, blk: &BlockId) -> Option<Arc<Mutex<Buffer<'fm, 'lm>>>> {
+        let mut buff = self.find_existing_buffer(blk);
+        if buff.is_none() {
+            buff = self.choose_unpinned_buffer();
+            match buff {
+                Some(ref b) => b.lock().unwrap().assign_to_block(blk.clone()).unwrap(),
+                None => return None,
+            }
+        }
+
+        let _b = buff.unwrap();
+        let mut b = _b.lock().unwrap();
+        if !b.is_pinned() {
+            self.num_available -= 1;
+        }
+        b.pin();
+
+        Some(_b.clone())
+    }
+
+    pub(in crate) fn find_existing_buffer(
+        &self,
+        blk: &BlockId,
+    ) -> Option<Arc<Mutex<Buffer<'fm, 'lm>>>> {
+        for buff in &self.bufferpool {
+            let b = buff.lock().unwrap();
+            if let Some(bufblk) = b.block() {
+                if bufblk == blk {
+                    return Some(buff.clone());
+                }
+            }
+        }
+        None
+    }
+
+    pub(in crate) fn choose_unpinned_buffer(&self) -> Option<Arc<Mutex<Buffer<'fm, 'lm>>>> {
+        for buff in &self.bufferpool {
+            let b = buff.lock().unwrap();
+            if !b.is_pinned() {
+                return Some(buff.clone());
+            }
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_buffer() -> Result<()> {
+        let dir = tempdir()?;
+        assert_eq!(dir.path().exists(), true);
+
+        let fm = Arc::new(FileMgr::new(dir.path(), 400));
+        let lm = Arc::new(Mutex::new(LogMgr::new(fm.clone(), "redo.log")));
+
+        let mut bm = BufferMgr::new(fm.clone(), lm.clone(), 3);
+
+        let buff1 = bm.pin(&BlockId::new("testfile", 1)).unwrap();
+        {
+            let mut b1 = buff1.lock().unwrap();
+            let p = b1.contents();
+            let n = p.get_i32(80).unwrap();
+            p.set_i32(80, n + 1).unwrap();
+            b1.set_modified(1, 0);
+            // what's n + 1?
+        }
+        bm.unpin(buff1);
+
+        dir.close()?;
+        Ok(())
     }
 }

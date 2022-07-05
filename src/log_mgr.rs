@@ -8,7 +8,7 @@ use crate::{
     page::{Page, PageError},
     BlockId,
 };
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 use thiserror::Error;
 
 const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32;
@@ -30,7 +30,7 @@ pub type Result<T> = core::result::Result<T, LogMgrError>;
 pub type LSN = i64;
 
 pub struct LogMgr<'p> {
-    fm: FileMgr,
+    fm: Arc<FileMgr>,
     logfile: String,
     logpage: Page<'p>,
     currentblk: Option<BlockId>,
@@ -39,14 +39,14 @@ pub struct LogMgr<'p> {
 }
 
 impl<'p> LogMgr<'p> {
-    pub fn new(fm: FileMgr, logfile: &str) -> Self {
+    pub fn new(fm: Arc<FileMgr>, logfile: &str) -> Self {
         let blocksize = fm.blocksize();
         let logsize = fm
             .length(logfile)
             .expect("failed to get the size of logfile");
 
         let mut lm = Self {
-            fm,
+            fm: fm.clone(),
             logfile: logfile.to_string(),
             logpage: Page::for_data(blocksize),
             currentblk: None,
@@ -61,8 +61,7 @@ impl<'p> LogMgr<'p> {
             );
         } else {
             let block = BlockId::new(logfile, logsize - 1);
-            lm.fm
-                .read(&block, &mut lm.logpage)
+            fm.read(&block, &mut lm.logpage)
                 .expect(format!("failed to read the block at {:?}", block).as_str());
             lm.currentblk = Some(block);
         }
@@ -113,12 +112,12 @@ impl<'p> LogMgr<'p> {
     pub fn reverse_iter(&mut self) -> Result<LogIterator<'_>> {
         self._flush()?;
         let block = self.currentblk.as_ref().expect("illegal state");
-        Ok(LogIterator::new(&self.fm, block))
+        Ok(LogIterator::new(self.fm.clone(), block))
     }
 }
 
 pub struct LogIterator<'lm> {
-    fm: &'lm FileMgr,
+    fm: Arc<FileMgr>,
     block: BlockId,
     page: Page<'lm>,
     currentpos: i32,
@@ -126,14 +125,16 @@ pub struct LogIterator<'lm> {
 }
 
 impl<'lm> LogIterator<'lm> {
-    pub fn new(fm: &'lm FileMgr, blk: &'lm BlockId) -> Self {
+    pub fn new(fm: Arc<FileMgr>, blk: &'lm BlockId) -> Self {
+        let blocksize = fm.blocksize();
+
         let mut iter = Self {
             fm,
             block: BlockId {
                 filename: blk.filename.to_string(),
                 blknum: blk.blknum,
             },
-            page: Page::for_data(fm.blocksize()),
+            page: Page::for_data(blocksize),
             currentpos: 0,
             boundary: 0,
         };
@@ -164,7 +165,9 @@ impl Iterator for LogIterator<'_> {
         if !self.has_next() {
             return None;
         }
-        if self.currentpos == self.fm.blocksize().try_into().unwrap() {
+
+        let blocksize = self.fm.blocksize();
+        if self.currentpos == blocksize.try_into().unwrap() {
             let newblock = BlockId::new(self.block.filename(), self.block.number() - 1);
             self.move_to_block(&newblock);
             self.block = newblock;
@@ -188,7 +191,7 @@ mod tests {
         let dir = tempdir()?;
         assert_eq!(dir.path().exists(), true);
 
-        let fm = FileMgr::new(dir.path(), 4096);
+        let fm = Arc::new(FileMgr::new(dir.path(), 4096));
         assert_eq!(fm.is_new(), false);
 
         let mut lm = LogMgr::new(fm, "redo.log");

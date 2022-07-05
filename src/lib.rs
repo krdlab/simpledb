@@ -9,7 +9,7 @@ mod file_mgr;
 mod log_mgr;
 mod page;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockId {
     filename: String,
     blknum: u64,
