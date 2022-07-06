@@ -5,7 +5,6 @@
 
 use std::string::FromUtf8Error;
 use std::vec;
-use std::{cell::RefCell, rc::Rc};
 use thiserror::Error;
 
 use crate::byte_buffer::*;
@@ -22,45 +21,42 @@ pub enum PageError {
 pub type Result<T> = core::result::Result<T, PageError>;
 
 pub struct Page<'a> {
-    buf: Rc<RefCell<Box<dyn ByteBuffer + 'a>>>,
+    buf: Box<dyn ByteBuffer + 'a>,
 }
 
 impl<'a> Page<'a> {
     pub fn for_data(blocksize: usize) -> Self {
         Page {
-            buf: Rc::new(RefCell::new(Box::new(AllocatedBuffer::new(blocksize)))),
+            buf: Box::new(AllocatedBuffer::new(blocksize)),
         }
     }
 
     pub fn for_log(bytes: &'a mut [u8]) -> Self {
         Page {
-            buf: Rc::new(RefCell::from(Box::new(WrappedBuffer::new(bytes)))),
+            buf: Box::new(WrappedBuffer::new(bytes)),
         }
     }
 
     pub fn set_i32(&mut self, offset: usize, n: i32) -> Result<()> {
-        Ok(self.buf.borrow_mut().put_i32_to(offset, n)?)
+        Ok(self.buf.put_i32_to(offset, n)?)
     }
 
     pub fn get_i32(&self, offset: usize) -> Result<i32> {
-        Ok(self.buf.borrow().get_i32_from(offset)?)
+        Ok(self.buf.get_i32_from(offset)?)
     }
 
     pub fn set_bytes(&mut self, offset: usize, bytes: &[u8]) -> Result<()> {
-        let mut bb = self.buf.borrow_mut();
-        bb.set_position(offset)?;
-        bb.put_i32(bytes.len().try_into().unwrap())?;
-        Ok(bb.put(bytes)?)
+        self.buf.set_position(offset)?;
+        self.buf.put_i32(bytes.len().try_into().unwrap())?;
+        Ok(self.buf.put(bytes)?)
     }
 
     pub fn get_bytes(&mut self, offset: usize) -> Result<Vec<u8>> {
-        let mut bb = self.buf.borrow_mut();
+        self.buf.set_position(offset)?;
 
-        bb.set_position(offset)?;
-
-        let len = bb.get_i32()?.try_into().unwrap();
+        let len = self.buf.get_i32()?.try_into().unwrap();
         let mut res = vec![0u8; len];
-        bb.get(&mut res)?;
+        self.buf.get(&mut res)?;
         Ok(res)
     }
 
@@ -82,9 +78,9 @@ impl<'a> Page<'a> {
         4 + strlen * bytes_per_char
     }
 
-    pub(in crate) fn contents(&mut self) -> Result<Rc<RefCell<Box<dyn ByteBuffer + 'a>>>> {
-        self.buf.borrow_mut().set_position(0)?;
-        Ok(self.buf.clone())
+    pub(in crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + 'a>> {
+        self.buf.set_position(0)?;
+        Ok(&mut self.buf)
     }
 }
 

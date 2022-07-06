@@ -9,13 +9,11 @@ use crate::{
     BlockId,
 };
 use std::{
-    cell::RefCell,
     collections::{hash_map::Entry, HashMap},
     fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
     num::TryFromIntError,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::Mutex,
 };
 use thiserror::Error;
@@ -35,26 +33,22 @@ pub enum FileMgrError {
 pub type Result<T> = core::result::Result<T, FileMgrError>;
 
 // TODO: rename this to FileExt and move into fileext.rs?
-trait FileChannel {
-    fn read_to<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()>;
-    fn write_from<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()>;
+trait FileChannel<'p, 'b> {
+    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()>;
+    fn write_from(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()>;
 }
 
-impl FileChannel for File {
-    fn read_to<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()> {
-        let mut buf = bb.borrow_mut();
-
-        let rem = buf.get_limit() - buf.get_position();
+impl<'p, 'b> FileChannel<'p, 'b> for File {
+    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()> {
+        let rem = buff.get_limit() - buff.get_position();
         let mut bytes = vec![0u8; rem];
         self.read(&mut bytes)?;
 
-        buf.put(&bytes)?;
+        buff.put(&bytes)?;
         Ok(())
     }
 
-    fn write_from<'b>(&mut self, bb: Rc<RefCell<Box<dyn ByteBuffer + 'b>>>) -> Result<()> {
-        let mut buf = bb.borrow_mut();
-
+    fn write_from(&mut self, buf: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()> {
         let pos = buf.get_position();
         let rem = buf.get_limit() - pos;
         let mut bytes = vec![0u8; rem];
