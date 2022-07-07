@@ -82,7 +82,7 @@ impl FileMgr {
         FileMgr {
             blocksize,
             is_new,
-            data: Mutex::new(FileMgrData::new(db_dir_path, blocksize)),
+            data: Mutex::new(FileMgrData::new(db_dir_path.to_path_buf(), blocksize)),
         }
     }
 
@@ -116,9 +116,9 @@ impl FileMgr {
 }
 
 impl FileMgrData {
-    pub(in crate) fn new(db_dir_path: &Path, blocksize: usize) -> Self {
+    pub(in crate) fn new(db_dir_path: PathBuf, blocksize: usize) -> Self {
         Self {
-            db_dir_path: db_dir_path.to_path_buf(),
+            db_dir_path,
             blocksize,
             open_files: HashMap::new(),
         }
