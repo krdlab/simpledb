@@ -63,7 +63,7 @@ impl ByteBuffer for AllocatedBuffer {
 
     fn set_position(&mut self, p: usize) -> Result<()> {
         if p > self.buf.len() {
-            Err(byte::Error::BadOffset(p))?;
+            return Err(byte::Error::BadOffset(p).into());
         }
         self.pos = p;
         Ok(())
@@ -122,34 +122,34 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
 
     fn set_position(&mut self, p: usize) -> Result<()> {
         if p > self.buf.len() {
-            Err(byte::Error::BadOffset(p))?;
+            return Err(byte::Error::BadOffset(p).into());
         }
         self.pos = p;
         Ok(())
     }
 
     fn get_i32_from(&self, mut pos: usize) -> Result<i32> {
-        check_len(&self.buf, pos + 4)?;
+        check_len(self.buf, pos + 4)?;
         Ok(self.buf.read_with(&mut pos, BE)?)
     }
 
     fn put_i32_to(&mut self, mut pos: usize, n: i32) -> Result<()> {
-        check_len(&self.buf, pos + 4)?;
+        check_len(self.buf, pos + 4)?;
         Ok(self.buf.write_with(&mut pos, n, BE)?)
     }
 
     fn get_i32(&mut self) -> Result<i32> {
-        check_len(&self.buf, self.pos + 4)?;
+        check_len(self.buf, self.pos + 4)?;
         Ok(self.buf.read_with(&mut self.pos, BE)?)
     }
 
     fn put_i32(&mut self, n: i32) -> Result<()> {
-        check_len(&self.buf, self.pos + 4)?;
+        check_len(self.buf, self.pos + 4)?;
         Ok(self.buf.write_with(&mut self.pos, n, BE)?)
     }
 
     fn get(&mut self, dst: &mut [u8]) -> Result<()> {
-        check_len(&self.buf, self.pos + dst.len())?;
+        check_len(self.buf, self.pos + dst.len())?;
         let bs = self
             .buf
             .read_with::<&[u8]>(&mut self.pos, Bytes::Len(dst.len()))?;
@@ -158,7 +158,7 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
     }
 
     fn put(&mut self, src: &[u8]) -> Result<()> {
-        check_len(&self.buf, self.pos + src.len())?;
+        check_len(self.buf, self.pos + src.len())?;
         self.buf.write::<&[u8]>(&mut self.pos, src)?;
         Ok(())
     }
