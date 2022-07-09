@@ -5,20 +5,33 @@
 
 use byte::ctx::Bytes;
 use byte::*;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[error("{0:?}")]
+pub struct ByteBufferError(pub(in crate) byte::Error);
+
+impl From<byte::Error> for ByteBufferError {
+    fn from(e: byte::Error) -> Self {
+        Self(e)
+    }
+}
+
+type Result<T> = core::result::Result<T, ByteBufferError>;
 
 pub trait ByteBuffer {
     fn get_limit(&self) -> usize;
 
     fn get_position(&self) -> usize;
-    fn set_position(&mut self, pos: usize) -> byte::Result<()>;
+    fn set_position(&mut self, pos: usize) -> Result<()>;
 
-    fn get_i32_from(&self, pos: usize) -> byte::Result<i32>;
-    fn put_i32_to(&mut self, pos: usize, n: i32) -> byte::Result<()>;
+    fn get_i32_from(&self, pos: usize) -> Result<i32>;
+    fn put_i32_to(&mut self, pos: usize, n: i32) -> Result<()>;
 
-    fn get_i32(&mut self) -> byte::Result<i32>;
-    fn put_i32(&mut self, n: i32) -> byte::Result<()>;
-    fn get(&mut self, dst: &mut [u8]) -> byte::Result<()>;
-    fn put(&mut self, src: &[u8]) -> byte::Result<()>;
+    fn get_i32(&mut self) -> Result<i32>;
+    fn put_i32(&mut self, n: i32) -> Result<()>;
+    fn get(&mut self, dst: &mut [u8]) -> Result<()>;
+    fn put(&mut self, src: &[u8]) -> Result<()>;
 }
 
 pub struct AllocatedBuffer {
@@ -48,35 +61,35 @@ impl ByteBuffer for AllocatedBuffer {
         self.pos
     }
 
-    fn set_position(&mut self, p: usize) -> byte::Result<()> {
+    fn set_position(&mut self, p: usize) -> Result<()> {
         if p > self.buf.len() {
-            return Err(byte::Error::BadOffset(p));
+            return Err(byte::Error::BadOffset(p).into());
         }
         self.pos = p;
         Ok(())
     }
 
-    fn get_i32_from(&self, mut pos: usize) -> byte::Result<i32> {
+    fn get_i32_from(&self, mut pos: usize) -> Result<i32> {
         check_len(&self.buf, pos + 4)?;
-        self.buf.read_with(&mut pos, BE)
+        Ok(self.buf.read_with(&mut pos, BE)?)
     }
 
-    fn put_i32_to(&mut self, mut pos: usize, n: i32) -> byte::Result<()> {
+    fn put_i32_to(&mut self, mut pos: usize, n: i32) -> Result<()> {
         check_len(&self.buf, pos + 4)?;
-        self.buf.write_with(&mut pos, n, BE)
+        Ok(self.buf.write_with(&mut pos, n, BE)?)
     }
 
-    fn get_i32(&mut self) -> byte::Result<i32> {
+    fn get_i32(&mut self) -> Result<i32> {
         check_len(&self.buf, self.pos + 4)?;
-        self.buf.read_with(&mut self.pos, BE)
+        Ok(self.buf.read_with(&mut self.pos, BE)?)
     }
 
-    fn put_i32(&mut self, n: i32) -> byte::Result<()> {
+    fn put_i32(&mut self, n: i32) -> Result<()> {
         check_len(&self.buf, self.pos + 4)?;
-        self.buf.write_with(&mut self.pos, n, BE)
+        Ok(self.buf.write_with(&mut self.pos, n, BE)?)
     }
 
-    fn get(&mut self, dst: &mut [u8]) -> byte::Result<()> {
+    fn get(&mut self, dst: &mut [u8]) -> Result<()> {
         check_len(&self.buf, self.pos + dst.len())?;
         let bs = self
             .buf
@@ -85,7 +98,7 @@ impl ByteBuffer for AllocatedBuffer {
         Ok(())
     }
 
-    fn put(&mut self, src: &[u8]) -> byte::Result<()> {
+    fn put(&mut self, src: &[u8]) -> Result<()> {
         check_len(&self.buf, self.pos + src.len())?;
         self.buf.write::<&[u8]>(&mut self.pos, src)?;
         Ok(())
@@ -107,36 +120,36 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
         self.pos
     }
 
-    fn set_position(&mut self, p: usize) -> byte::Result<()> {
+    fn set_position(&mut self, p: usize) -> Result<()> {
         if p > self.buf.len() {
-            return Err(byte::Error::BadOffset(p));
+            return Err(byte::Error::BadOffset(p).into());
         }
         self.pos = p;
         Ok(())
     }
 
-    fn get_i32_from(&self, mut pos: usize) -> byte::Result<i32> {
-        check_len(&self.buf, pos + 4)?;
-        self.buf.read_with(&mut pos, BE)
+    fn get_i32_from(&self, mut pos: usize) -> Result<i32> {
+        check_len(self.buf, pos + 4)?;
+        Ok(self.buf.read_with(&mut pos, BE)?)
     }
 
-    fn put_i32_to(&mut self, mut pos: usize, n: i32) -> byte::Result<()> {
-        check_len(&self.buf, pos + 4)?;
-        self.buf.write_with(&mut pos, n, BE)
+    fn put_i32_to(&mut self, mut pos: usize, n: i32) -> Result<()> {
+        check_len(self.buf, pos + 4)?;
+        Ok(self.buf.write_with(&mut pos, n, BE)?)
     }
 
-    fn get_i32(&mut self) -> byte::Result<i32> {
-        check_len(&self.buf, self.pos + 4)?;
-        self.buf.read_with(&mut self.pos, BE)
+    fn get_i32(&mut self) -> Result<i32> {
+        check_len(self.buf, self.pos + 4)?;
+        Ok(self.buf.read_with(&mut self.pos, BE)?)
     }
 
-    fn put_i32(&mut self, n: i32) -> byte::Result<()> {
-        check_len(&self.buf, self.pos + 4)?;
-        self.buf.write_with(&mut self.pos, n, BE)
+    fn put_i32(&mut self, n: i32) -> Result<()> {
+        check_len(self.buf, self.pos + 4)?;
+        Ok(self.buf.write_with(&mut self.pos, n, BE)?)
     }
 
-    fn get(&mut self, dst: &mut [u8]) -> byte::Result<()> {
-        check_len(&self.buf, self.pos + dst.len())?;
+    fn get(&mut self, dst: &mut [u8]) -> Result<()> {
+        check_len(self.buf, self.pos + dst.len())?;
         let bs = self
             .buf
             .read_with::<&[u8]>(&mut self.pos, Bytes::Len(dst.len()))?;
@@ -144,8 +157,8 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
         Ok(())
     }
 
-    fn put(&mut self, src: &[u8]) -> byte::Result<()> {
-        check_len(&self.buf, self.pos + src.len())?;
+    fn put(&mut self, src: &[u8]) -> Result<()> {
+        check_len(self.buf, self.pos + src.len())?;
         self.buf.write::<&[u8]>(&mut self.pos, src)?;
         Ok(())
     }
@@ -153,10 +166,10 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AllocatedBuffer, ByteBuffer, WrappedBuffer};
+    use super::*;
 
     #[test]
-    fn test_allocated_buffer_set_position() -> byte::Result<()> {
+    fn test_allocated_buffer_set_position() -> Result<()> {
         let mut b = AllocatedBuffer::new(10);
         b.set_position(5)?;
         assert_eq!(b.get_position(), 5);
@@ -164,19 +177,19 @@ mod tests {
     }
 
     #[test]
-    fn test_allocated_buffer_uses_i32() -> byte::Result<()> {
+    fn test_allocated_buffer_uses_i32() -> Result<()> {
         let mut b = AllocatedBuffer::new(10);
         test_put_and_get_i32(&mut b)
     }
 
     #[test]
-    fn test_allocated_buffer_uses_bytes() -> byte::Result<()> {
+    fn test_allocated_buffer_uses_bytes() -> Result<()> {
         let mut b = AllocatedBuffer::new(10);
         test_put_and_get_bytes(&mut b)
     }
 
     #[test]
-    fn test_wrapped_buffer_set_position() -> byte::Result<()> {
+    fn test_wrapped_buffer_set_position() -> Result<()> {
         let mut buf = [0u8; 10];
         let mut b = WrappedBuffer::new(&mut buf);
         b.set_position(5)?;
@@ -185,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wrapped_buffer_uses_i32() -> byte::Result<()> {
+    fn test_wrapped_buffer_uses_i32() -> Result<()> {
         let mut buf = [0u8; 10];
         {
             let mut b = WrappedBuffer::new(&mut buf);
@@ -196,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wrapped_buffer_uses_bytes() -> byte::Result<()> {
+    fn test_wrapped_buffer_uses_bytes() -> Result<()> {
         let mut buf = [0u8; 10];
         {
             let mut b = WrappedBuffer::new(&mut buf);
@@ -206,7 +219,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_put_and_get_i32<'a, B>(b: &mut B) -> byte::Result<()>
+    fn test_put_and_get_i32<'a, B>(b: &mut B) -> Result<()>
     where
         B: ByteBuffer,
     {
@@ -226,7 +239,7 @@ mod tests {
         Ok(())
     }
 
-    fn test_put_and_get_bytes<'a, B>(b: &mut B) -> byte::Result<()>
+    fn test_put_and_get_bytes<'a, B>(b: &mut B) -> Result<()>
     where
         B: ByteBuffer,
     {
