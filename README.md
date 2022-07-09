@@ -5,7 +5,7 @@
 - [x] Database Systems
 - [x] JDBC
 - [x] Disk and File Management
-- [ ] Memory Management
+- [x] Memory Management
 - [ ] Transaction Management
 - [ ] Record Management
 - [ ] Metadata Management
