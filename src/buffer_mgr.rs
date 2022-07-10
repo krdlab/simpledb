@@ -192,8 +192,8 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
     }
 }
 
-impl<'fm, 'lm> BufferMgrData<'fm, 'lm> {
-    pub(in crate) fn try_to_pin(&mut self, blk: &BlockId) -> Option<Arc<Mutex<Buffer<'fm, 'lm>>>> {
+impl<'b, 'lm> BufferMgrData<'b, 'lm> {
+    pub(in crate) fn try_to_pin(&mut self, blk: &BlockId) -> Option<Arc<Mutex<Buffer<'b, 'lm>>>> {
         let mut buff = self.find_existing_buffer(blk);
         if buff.is_none() {
             buff = self.choose_unpinned_buffer();
@@ -216,7 +216,7 @@ impl<'fm, 'lm> BufferMgrData<'fm, 'lm> {
     pub(in crate) fn find_existing_buffer(
         &self,
         blk: &BlockId,
-    ) -> Option<Arc<Mutex<Buffer<'fm, 'lm>>>> {
+    ) -> Option<Arc<Mutex<Buffer<'b, 'lm>>>> {
         for buff in &self.bufferpool {
             let b = buff.lock().unwrap();
             if let Some(bufblk) = b.block() {
@@ -228,7 +228,7 @@ impl<'fm, 'lm> BufferMgrData<'fm, 'lm> {
         None
     }
 
-    pub(in crate) fn choose_unpinned_buffer(&self) -> Option<Arc<Mutex<Buffer<'fm, 'lm>>>> {
+    pub(in crate) fn choose_unpinned_buffer(&self) -> Option<Arc<Mutex<Buffer<'b, 'lm>>>> {
         for buff in &self.bufferpool {
             let b = buff.lock().unwrap();
             if !b.is_pinned() {
