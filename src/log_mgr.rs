@@ -4,14 +4,13 @@
 // https://opensource.org/licenses/MIT
 
 use crate::{
+    constants::I32_BYTE_SIZE,
     file_mgr::{FileMgr, FileMgrError},
     page::{Page, PageError},
     BlockId,
 };
-use std::{mem::size_of, sync::Arc};
+use std::sync::Arc;
 use thiserror::Error;
-
-const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32;
 
 #[derive(Debug, Error)]
 pub enum LogMgrError {

@@ -73,7 +73,7 @@ impl<'a> Page<'a> {
         }
     }
 
-    fn max_length(strlen: usize) -> usize {
+    pub(in crate) fn max_length(strlen: usize) -> usize {
         let bytes_per_char: usize = 4; // TODO
         4 + strlen * bytes_per_char
     }

@@ -3,12 +3,15 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use std::fmt::Display;
+
 mod buffer_mgr;
 mod byte_buffer;
+mod constants;
 mod file_mgr;
 mod log_mgr;
 mod page;
-mod transaction;
+mod tx;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockId {
@@ -30,6 +33,12 @@ impl BlockId {
 
     pub fn number(&self) -> u64 {
         self.blknum
+    }
+}
+
+impl Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[file {}, block {}]", self.filename, self.blknum)
     }
 }
 
