@@ -8,6 +8,7 @@ mod byte_buffer;
 mod file_mgr;
 mod log_mgr;
 mod page;
+mod transaction;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockId {
