@@ -3,6 +3,8 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use crate::buffer_mgr::{Buffer, BufferError, BufferMgr};
+use crate::log_mgr::{LogMgrError, LSN};
 use crate::page::{Page, PageError};
 use crate::{constants::I32_BYTE_SIZE, log_mgr::LogMgr, tx::transaction::Transaction, BlockId};
 use crate::{log_mgr, page};
@@ -12,7 +14,13 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum RecoveryError {
     #[error("{0:?}")]
-    Byte(#[from] PageError),
+    PageError(#[from] PageError),
+
+    #[error("{0:?}")]
+    LogMgrError(#[from] LogMgrError),
+
+    #[error("{0:?}")]
+    BufferMgrError(#[from] BufferError),
 
     #[error("unknown op: {0:?}")]
     UnknownOp(i32),
@@ -20,7 +28,7 @@ pub enum RecoveryError {
 
 pub type Result<T> = core::result::Result<T, RecoveryError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Op {
     Checkpoint = 0,
     Start,
@@ -387,4 +395,92 @@ impl Display for SetStringRecord {
             self.txnum, self.block, self.offset, self.value
         )
     }
+}
+
+pub struct RecoveryMgr<'l, 'b, 't> {
+    lm: &'l mut LogMgr<'l>,
+    bm: &'b mut BufferMgr<'b, 'l>,
+    tx: &'t mut Transaction,
+    txnum: i32,
+}
+
+impl<'l, 'b, 't> RecoveryMgr<'l, 'b, 't> {
+    pub fn new(
+        tx: &'t mut Transaction,
+        txnum: i32,
+        lm: &'l mut LogMgr<'l>,
+        bm: &'b mut BufferMgr<'b, 'l>,
+    ) -> Result<Self> {
+        StartRecord::write_to_log(lm, txnum)?;
+        Ok(Self { tx, txnum, lm, bm })
+    }
+
+    pub fn commit(&mut self) -> Result<()> {
+        self.bm.flush_all(self.txnum)?;
+        let lsn = CommitRecord::write_to_log(self.lm, self.txnum)?;
+        self.lm.flush(lsn)?;
+        Ok(())
+    }
+
+    pub fn rollback(&mut self) -> Result<()> {
+        self.do_rollback();
+        self.bm.flush_all(self.txnum)?;
+        let lsn = RollbackRecord::write_to_log(self.lm, self.txnum)?;
+        self.lm.flush(lsn)?;
+        Ok(())
+    }
+
+    pub fn recover(&mut self) -> Result<()> {
+        self.do_recover();
+        self.bm.flush_all(self.txnum)?;
+        let lsn = CheckpointRecord::write_to_log(self.lm)?;
+        self.lm.flush(lsn)?;
+        Ok(())
+    }
+
+    pub fn set_i32(&mut self, buff: &mut Buffer, offset: usize, _newval: i32) -> Result<LSN> {
+        let oldval = buff.contents().get_i32(offset)?;
+        let blk = buff.block().as_ref().unwrap();
+        let lsn = SetIntRecord::write_to_log(self.lm, self.txnum, blk, offset, oldval)?;
+        Ok(lsn)
+    }
+
+    fn do_rollback(&mut self) -> Result<()> {
+        let mut iter = self.lm.reverse_iter()?;
+        while iter.has_next() {
+            let bytes = iter.next().unwrap();
+            let rec = create_log_record(bytes)?;
+            if rec.tx_number() == self.txnum {
+                if rec.op() == Op::Start {
+                    break;
+                }
+                rec.undo(self.tx)
+            }
+        }
+        Ok(())
+    }
+
+    fn do_recover(&mut self) -> Result<()> {
+        let mut finished_txs: Vec<i32> = Vec::new();
+        let mut iter = self.lm.reverse_iter()?;
+        while iter.has_next() {
+            let bytes = iter.next().unwrap();
+            let rec = create_log_record(bytes)?;
+            if rec.op() == Op::Checkpoint {
+                break;
+            }
+            if rec.op() == Op::Commit || rec.op() == Op::Rollback {
+                finished_txs.push(rec.tx_number());
+            } else if !finished_txs.contains(&rec.tx_number()) {
+                rec.undo(self.tx);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_recovery_mgr() {}
 }
