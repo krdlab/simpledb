@@ -9,7 +9,7 @@ use crate::{
     page::{Page, PageError},
     BlockId,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,86 +31,99 @@ pub type LSN = i64;
 pub struct LogMgr<'p> {
     fm: Arc<FileMgr>,
     logfile: String,
+    data: Mutex<LogMgrData<'p>>,
+}
+
+struct LogMgrData<'p> {
     logpage: Page<'p>,
     currentblk: Option<BlockId>,
     latest_lsn: LSN,
     last_saved_lsn: LSN,
 }
 
-impl<'p> LogMgr<'p> {
-    pub fn new(fm: Arc<FileMgr>, logfile: &str) -> Self {
-        let blocksize = fm.blocksize();
-        let logsize = fm
-            .length(logfile)
-            .expect("failed to get the size of logfile");
-
-        let mut lm = Self {
-            fm: fm.clone(),
-            logfile: logfile.to_string(),
-            logpage: Page::for_data(blocksize),
+impl<'p> LogMgrData<'p> {
+    pub(crate) fn new(logpage: Page<'p>) -> Self {
+        Self {
+            logpage,
             currentblk: None,
             latest_lsn: 0,
             last_saved_lsn: 0,
-        };
-
-        if logsize == 0 {
-            lm.currentblk = Some(
-                lm.append_new_block()
-                    .expect("failed to call append_new_block"),
-            );
-        } else {
-            let block = BlockId::new(logfile, logsize - 1);
-            fm.read(&block, &mut lm.logpage)
-                .expect(format!("failed to read the block at {:?}", block).as_str());
-            lm.currentblk = Some(block);
         }
+    }
+}
 
+impl<'p> LogMgr<'p> {
+    pub fn new(fm: Arc<FileMgr>, logfile: &str) -> Self {
+        let blocksize = fm.blocksize();
+        let logsize = fm.length(logfile).unwrap();
+
+        let lm = Self {
+            fm: fm.clone(),
+            logfile: logfile.to_string(),
+            data: Mutex::new(LogMgrData::new(Page::for_data(blocksize))),
+        };
+        {
+            let mut lmd = lm.data.lock().unwrap();
+            if logsize == 0 {
+                let new_blk = lm.append_new_block(&mut lmd).unwrap().clone();
+                lmd.currentblk = Some(new_blk);
+            } else {
+                let block = BlockId::new(logfile, logsize - 1);
+                fm.read(&block, &mut lmd.logpage).unwrap();
+                lmd.currentblk = Some(block);
+            }
+        }
         lm
     }
 
-    fn append_new_block(&mut self) -> Result<BlockId> {
+    fn append_new_block(&self, data: &mut MutexGuard<LogMgrData>) -> Result<BlockId> {
         let block = self.fm.append(&self.logfile)?;
         let blocksize = self.fm.blocksize().try_into().unwrap();
-        self.logpage.set_i32(0, blocksize)?;
-        self.fm.write(&block, &mut self.logpage)?;
+        data.logpage.set_i32(0, blocksize)?;
+        self.fm.write(&block, &mut data.logpage)?;
         Ok(block)
     }
 
     pub fn apppend(&mut self, logrec: &[u8]) -> Result<LSN> {
-        let mut boundary = self.logpage.get_i32(0)?;
+        let mut data = self.data.lock().unwrap();
+
+        let mut boundary = data.logpage.get_i32(0)?;
         let recsize: i32 = logrec.len().try_into().unwrap();
         let bytesneeded: i32 = recsize + I32_BYTE_SIZE;
         if boundary - bytesneeded < I32_BYTE_SIZE {
-            self._flush()?;
-            self.currentblk = Some(self.append_new_block()?);
-            boundary = self.logpage.get_i32(0)?;
+            self._flush(&mut data)?;
+            data.currentblk = Some(self.append_new_block(&mut data)?);
+            boundary = data.logpage.get_i32(0)?;
         }
 
         let recpos = boundary - bytesneeded;
         let recpos_usize = usize::try_from(boundary - bytesneeded).unwrap();
-        self.logpage.set_bytes(recpos_usize, logrec)?;
-        self.logpage.set_i32(0, recpos)?;
-        self.latest_lsn += 1;
-        Ok(self.latest_lsn)
+        data.logpage.set_bytes(recpos_usize, logrec)?;
+        data.logpage.set_i32(0, recpos)?;
+        data.latest_lsn += 1;
+        Ok(data.latest_lsn)
     }
 
-    pub fn flush(&mut self, lsn: LSN) -> Result<()> {
-        if lsn >= self.last_saved_lsn {
-            self._flush()?;
+    pub fn flush(&self, lsn: LSN) -> Result<()> {
+        let mut data = self.data.lock().unwrap();
+        if lsn >= data.last_saved_lsn {
+            self._flush(&mut data)?;
         }
         Ok(())
     }
 
-    fn _flush(&mut self) -> Result<()> {
-        let block = self.currentblk.as_ref().expect("illegal state");
-        self.fm.write(block, &mut self.logpage)?;
-        self.last_saved_lsn = self.latest_lsn;
+    fn _flush(&self, data: &mut MutexGuard<LogMgrData>) -> Result<()> {
+        let block = data.currentblk.as_ref().unwrap().clone();
+        self.fm.write(&block, &mut data.logpage)?;
+        data.last_saved_lsn = data.latest_lsn;
         Ok(())
     }
 
     pub fn reverse_iter(&mut self) -> Result<LogIterator<'_>> {
-        self._flush()?;
-        let block = self.currentblk.as_ref().expect("illegal state");
+        let mut data = self.data.lock().unwrap();
+        self._flush(&mut data)?;
+
+        let block = data.currentblk.as_ref().unwrap().clone();
         Ok(LogIterator::new(self.fm.clone(), block))
     }
 }
@@ -124,7 +137,7 @@ pub struct LogIterator<'lm> {
 }
 
 impl<'lm> LogIterator<'lm> {
-    pub fn new(fm: Arc<FileMgr>, blk: &'lm BlockId) -> Self {
+    pub fn new(fm: Arc<FileMgr>, blk: BlockId) -> Self {
         let blocksize = fm.blocksize();
 
         let mut iter = Self {
