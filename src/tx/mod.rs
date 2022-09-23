@@ -3,5 +3,6 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+pub mod lock_table;
 pub mod recovery_mgr;
 pub mod transaction;

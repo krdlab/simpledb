@@ -13,7 +13,7 @@ mod log_mgr;
 mod page;
 mod tx;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BlockId {
     filename: String,
     blknum: u64,
