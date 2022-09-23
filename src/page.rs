@@ -73,12 +73,12 @@ impl<'a> Page<'a> {
         }
     }
 
-    pub(in crate) fn max_length(strlen: usize) -> usize {
+    pub(crate) fn max_length(strlen: usize) -> usize {
         let bytes_per_char: usize = 4; // TODO
         4 + strlen * bytes_per_char
     }
 
-    pub(in crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + 'a>> {
+    pub(crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + 'a>> {
         self.buf.set_position(0)?;
         Ok(&mut self.buf)
     }

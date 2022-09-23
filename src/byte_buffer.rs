@@ -9,7 +9,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("{0:?}")]
-pub struct ByteBufferError(pub(in crate) byte::Error);
+pub struct ByteBufferError(pub(crate) byte::Error);
 
 impl From<byte::Error> for ByteBufferError {
     fn from(e: byte::Error) -> Self {

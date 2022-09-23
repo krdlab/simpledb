@@ -109,14 +109,14 @@ impl FileMgr {
         data.append(filename)
     }
 
-    pub(in crate) fn length(&self, filename: &str) -> Result<u64> {
+    pub(crate) fn length(&self, filename: &str) -> Result<u64> {
         let mut data = self.data.lock().unwrap();
         data.length(filename)
     }
 }
 
 impl FileMgrData {
-    pub(in crate) fn new(db_dir_path: PathBuf, blocksize: usize) -> Self {
+    pub(crate) fn new(db_dir_path: PathBuf, blocksize: usize) -> Self {
         Self {
             db_dir_path,
             blocksize,
