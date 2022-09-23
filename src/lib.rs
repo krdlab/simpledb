@@ -47,9 +47,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test() {
+    fn test_new() {
         let result = BlockId::new("test", 1);
         assert_eq!(result.filename(), "test");
         assert_eq!(result.number(), 1);
+    }
+
+    #[test]
+    fn test_equivalence() {
+        {
+            let b1 = BlockId::new("test", 1);
+            let b2 = BlockId::new("test", 1);
+            assert!(b1 == b2);
+            assert!(b2 == b1);
+        }
+        {
+            let b1 = BlockId::new("test", 1);
+            let b2 = BlockId::new("test", 1);
+            let b3 = BlockId::new("test", 1);
+            assert!(b1 == b2);
+            assert!(b2 == b3);
+            assert!(b3 == b1);
+        }
+    }
+
+    #[test]
+    fn test_non_equivalence() {
+        {
+            let b1 = BlockId::new("test1", 1);
+            let b2 = BlockId::new("test2", 1);
+            assert!(b1 != b2);
+            assert!(b2 != b1);
+        }
+        {
+            let b1 = BlockId::new("test1", 1);
+            let b2 = BlockId::new("test1", 2);
+            assert!(b1 != b2);
+            assert!(b2 != b1);
+        }
     }
 }
