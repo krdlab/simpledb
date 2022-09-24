@@ -27,6 +27,13 @@ pub enum LockTableError {
 pub type Result<T> = core::result::Result<T, LockTableError>;
 
 impl LockTable {
+    pub fn new() -> Self {
+        Self {
+            locks: Mutex::new(HashMap::new()),
+            waiting: Condvar::new(),
+        }
+    }
+
     pub fn slock(&self, blk: &BlockId) -> Result<()> {
         let mut locks = self.locks.lock().unwrap();
 
