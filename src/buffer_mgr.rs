@@ -141,7 +141,7 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
 
     pub fn flush_all(&mut self, txnum: i32) -> Result<()> {
         let data = self.data.lock().unwrap();
-        for buff in &data.bufferpool {
+        for buff in data.bufferpool.iter() {
             let mut b = buff.lock().unwrap();
             if b.modifying_tx() == txnum {
                 b.flush()?;
@@ -193,30 +193,31 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
 
 impl<'b, 'lm> BufferMgrData<'b, 'lm> {
     pub(crate) fn try_to_pin(&mut self, blk: &BlockId) -> Option<Arc<Mutex<Buffer<'b, 'lm>>>> {
-        let mut buff = self.find_existing_buffer(blk);
-        if buff.is_none() {
-            buff = self.choose_unpinned_buffer();
-            match buff {
-                Some(ref b) => b.lock().unwrap().assign_to_block(blk.clone()).unwrap(),
-                None => return None,
+        let buff = if let Some(buff) = self.find_existing_buffer(blk) {
+            buff
+        } else {
+            if let Some(buff) = self.choose_unpinned_buffer() {
+                buff.lock().unwrap().assign_to_block(blk.clone()).unwrap();
+                buff
+            } else {
+                return None;
             }
-        }
+        };
 
-        let _b = buff.unwrap();
-        let mut b = _b.lock().unwrap();
+        let mut b = buff.lock().unwrap();
         if !b.is_pinned() {
             self.num_available -= 1;
         }
         b.pin();
 
-        Some(_b.clone())
+        Some(buff.clone())
     }
 
     pub(crate) fn find_existing_buffer(
         &self,
         blk: &BlockId,
     ) -> Option<Arc<Mutex<Buffer<'b, 'lm>>>> {
-        for buff in &self.bufferpool {
+        for buff in self.bufferpool.iter() {
             let b = buff.lock().unwrap();
             if let Some(bufblk) = b.block() {
                 if bufblk == blk {
@@ -228,7 +229,7 @@ impl<'b, 'lm> BufferMgrData<'b, 'lm> {
     }
 
     pub(crate) fn choose_unpinned_buffer(&self) -> Option<Arc<Mutex<Buffer<'b, 'lm>>>> {
-        for buff in &self.bufferpool {
+        for buff in self.bufferpool.iter() {
             let b = buff.lock().unwrap();
             if !b.is_pinned() {
                 return Some(buff.clone());
