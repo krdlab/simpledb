@@ -3,11 +3,13 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use super::transaction::TxInner;
 use crate::buffer_mgr::{Buffer, BufferError, BufferMgr};
 use crate::log_mgr::{LogMgrError, LSN};
 use crate::page::{Page, PageError};
-use crate::{constants::I32_BYTE_SIZE, log_mgr::LogMgr, tx::transaction::Transaction, BlockId};
+use crate::{constants::I32_BYTE_SIZE, log_mgr::LogMgr, BlockId};
 use crate::{log_mgr, page};
+use std::sync::Arc;
 use std::{convert::TryInto, fmt::Display};
 use thiserror::Error;
 
@@ -65,7 +67,7 @@ impl Op {
 trait LogRecord {
     fn op(&self) -> Op;
     fn tx_number(&self) -> i32;
-    fn undo<'t>(&self, tx: &'t mut Transaction);
+    fn undo<'t>(&self, tx: &'t mut TxInner);
 }
 
 fn create_log_record(mut bytes: Vec<u8>) -> Result<Box<dyn LogRecord>> {
@@ -84,7 +86,7 @@ fn create_log_record(mut bytes: Vec<u8>) -> Result<Box<dyn LogRecord>> {
 
 struct CheckpointRecord {}
 impl CheckpointRecord {
-    pub fn write_to_log(lm: &mut LogMgr) -> log_mgr::Result<i64> {
+    pub fn write_to_log(lm: Arc<LogMgr>) -> log_mgr::Result<i64> {
         let i32_bytes: usize = I32_BYTE_SIZE.try_into().unwrap();
         let mut rec = vec![0u8; i32_bytes];
         {
@@ -103,7 +105,7 @@ impl LogRecord for CheckpointRecord {
         -1 // dummy value
     }
 
-    fn undo<'t>(&self, _tx: &'t mut Transaction) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
 }
 impl Display for CheckpointRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -121,7 +123,7 @@ impl StartRecord {
         Ok(Self { txnum })
     }
 
-    pub fn write_to_log(lm: &mut LogMgr, txnum: i32) -> log_mgr::Result<i64> {
+    pub fn write_to_log(lm: Arc<LogMgr>, txnum: i32) -> log_mgr::Result<i64> {
         let i32_bytes: usize = I32_BYTE_SIZE.try_into().unwrap();
         let mut rec = vec![0u8; i32_bytes * 2];
         {
@@ -141,7 +143,7 @@ impl LogRecord for StartRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, _tx: &'t mut Transaction) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
 }
 impl Display for StartRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -159,7 +161,7 @@ impl CommitRecord {
         Ok(Self { txnum })
     }
 
-    pub fn write_to_log(lm: &mut LogMgr, txnum: i32) -> log_mgr::Result<i64> {
+    pub fn write_to_log(lm: Arc<LogMgr>, txnum: i32) -> log_mgr::Result<i64> {
         let i32_bytes: usize = I32_BYTE_SIZE.try_into().unwrap();
         let mut rec = vec![0u8; 2 * i32_bytes];
         {
@@ -179,7 +181,7 @@ impl LogRecord for CommitRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, _tx: &'t mut Transaction) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
 }
 impl Display for CommitRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -197,7 +199,7 @@ impl RollbackRecord {
         Ok(Self { txnum })
     }
 
-    pub fn write_to_log(lm: &mut LogMgr, txnum: i32) -> log_mgr::Result<i64> {
+    pub fn write_to_log(lm: Arc<LogMgr>, txnum: i32) -> log_mgr::Result<i64> {
         let i32_bytes = I32_BYTE_SIZE.try_into().unwrap();
         let mut rec = vec![0u8; 2 * i32_bytes];
         {
@@ -217,7 +219,7 @@ impl LogRecord for RollbackRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, _tx: &'t mut Transaction) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
 }
 impl Display for RollbackRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -256,7 +258,7 @@ impl SetIntRecord {
     }
 
     pub fn write_to_log(
-        lm: &mut LogMgr,
+        lm: Arc<LogMgr>,
         txnum: i32,
         blk: &BlockId,
         offset: usize,
@@ -291,9 +293,9 @@ impl LogRecord for SetIntRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, tx: &'t mut Transaction) {
+    fn undo<'t>(&self, tx: &'t mut TxInner) {
         tx.pin(&self.block);
-        tx.set_i32(&self.block, self.offset, self.value, false);
+        tx.set_i32_for_recovery(&self.block, self.offset, self.value);
         tx.unpin(&self.block);
     }
 }
@@ -344,11 +346,11 @@ impl SetStringRecord {
     }
 
     pub fn write_to_log(
-        lm: &mut LogMgr,
+        lm: Arc<LogMgr>,
         txnum: i32,
         blk: &BlockId,
-        offset: i32,
-        val: &str,
+        offset: usize,
+        val: String,
     ) -> log_mgr::Result<i64> {
         let i32_bytes: usize = I32_BYTE_SIZE.try_into().unwrap();
         let tpos = i32_bytes;
@@ -364,8 +366,8 @@ impl SetStringRecord {
             p.set_i32(0, Op::SetString.to_i32())?;
             p.set_i32(tpos, txnum)?;
             p.set_string(fpos, blk.filename())?;
-            p.set_i32(opos, offset)?;
-            p.set_string(vpos, val)?;
+            p.set_i32(opos, offset.try_into().unwrap())?;
+            p.set_string(vpos, val.as_str())?;
         }
         lm.apppend(&rec)
     }
@@ -380,9 +382,9 @@ impl LogRecord for SetStringRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, tx: &'t mut Transaction) {
+    fn undo<'t>(&self, tx: &'t mut TxInner) {
         tx.pin(&self.block);
-        tx.set_string(&self.block, self.offset, &self.value, false);
+        tx.set_string_for_recovery(&self.block, self.offset, &self.value);
         tx.unpin(&self.block);
     }
 }
@@ -397,43 +399,37 @@ impl Display for SetStringRecord {
     }
 }
 
-pub struct RecoveryMgr<'l, 'b, 't> {
-    lm: &'l mut LogMgr<'l>,
-    bm: &'b mut BufferMgr<'b, 'l>,
-    tx: &'t mut Transaction,
+pub struct RecoveryMgr<'lm, 'bm> {
+    lm: Arc<LogMgr<'lm>>,
+    bm: Arc<BufferMgr<'bm, 'lm>>,
     txnum: i32,
 }
 
-impl<'l, 'b, 't> RecoveryMgr<'l, 'b, 't> {
-    pub fn new(
-        tx: &'t mut Transaction,
-        txnum: i32,
-        lm: &'l mut LogMgr<'l>,
-        bm: &'b mut BufferMgr<'b, 'l>,
-    ) -> Result<Self> {
-        StartRecord::write_to_log(lm, txnum)?;
-        Ok(Self { tx, txnum, lm, bm })
+impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
+    pub fn new(txnum: i32, lm: Arc<LogMgr<'lm>>, bm: Arc<BufferMgr<'bm, 'lm>>) -> Self {
+        StartRecord::write_to_log(lm.clone(), txnum).unwrap();
+        Self { lm, bm, txnum }
     }
 
     pub fn commit(&mut self) -> Result<()> {
         self.bm.flush_all(self.txnum)?;
-        let lsn = CommitRecord::write_to_log(self.lm, self.txnum)?;
+        let lsn = CommitRecord::write_to_log(self.lm.clone(), self.txnum)?;
         self.lm.flush(lsn)?;
         Ok(())
     }
 
-    pub fn rollback(&mut self) -> Result<()> {
-        self.do_rollback();
+    pub(crate) fn rollback<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
+        self.do_rollback(tx);
         self.bm.flush_all(self.txnum)?;
-        let lsn = RollbackRecord::write_to_log(self.lm, self.txnum)?;
+        let lsn = RollbackRecord::write_to_log(self.lm.clone(), self.txnum)?;
         self.lm.flush(lsn)?;
         Ok(())
     }
 
-    pub fn recover(&mut self) -> Result<()> {
-        self.do_recover();
+    pub(crate) fn recover<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
+        self.do_recover(tx);
         self.bm.flush_all(self.txnum)?;
-        let lsn = CheckpointRecord::write_to_log(self.lm)?;
+        let lsn = CheckpointRecord::write_to_log(self.lm.clone())?;
         self.lm.flush(lsn)?;
         Ok(())
     }
@@ -441,11 +437,18 @@ impl<'l, 'b, 't> RecoveryMgr<'l, 'b, 't> {
     pub fn set_i32(&mut self, buff: &mut Buffer, offset: usize, _newval: i32) -> Result<LSN> {
         let oldval = buff.contents().get_i32(offset)?;
         let blk = buff.block().as_ref().unwrap();
-        let lsn = SetIntRecord::write_to_log(self.lm, self.txnum, blk, offset, oldval)?;
+        let lsn = SetIntRecord::write_to_log(self.lm.clone(), self.txnum, blk, offset, oldval)?;
         Ok(lsn)
     }
 
-    fn do_rollback(&mut self) -> Result<()> {
+    pub fn set_string(&self, buff: &mut Buffer, offset: usize, _newval: &str) -> Result<LSN> {
+        let oldval = buff.contents().get_string(offset)?;
+        let blk = buff.block().as_ref().unwrap();
+        let lsn = SetStringRecord::write_to_log(self.lm.clone(), self.txnum, blk, offset, oldval)?;
+        Ok(lsn)
+    }
+
+    fn do_rollback<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
         let mut iter = self.lm.reverse_iter()?;
         while iter.has_next() {
             let bytes = iter.next().unwrap();
@@ -454,13 +457,13 @@ impl<'l, 'b, 't> RecoveryMgr<'l, 'b, 't> {
                 if rec.op() == Op::Start {
                     break;
                 }
-                rec.undo(self.tx)
+                rec.undo(tx);
             }
         }
         Ok(())
     }
 
-    fn do_recover(&mut self) -> Result<()> {
+    fn do_recover<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
         let mut finished_txs: Vec<i32> = Vec::new();
         let mut iter = self.lm.reverse_iter()?;
         while iter.has_next() {
@@ -472,7 +475,7 @@ impl<'l, 'b, 't> RecoveryMgr<'l, 'b, 't> {
             if rec.op() == Op::Commit || rec.op() == Op::Rollback {
                 finished_txs.push(rec.tx_number());
             } else if !finished_txs.contains(&rec.tx_number()) {
-                rec.undo(self.tx);
+                rec.undo(tx);
             }
         }
         Ok(())

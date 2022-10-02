@@ -15,11 +15,11 @@ use std::{
 pub(crate) struct BufferList<'b, 'lm> {
     buffers: HashMap<BlockId, Arc<Mutex<Buffer<'b, 'lm>>>>,
     pins: Vec<BlockId>,
-    bm: &'b mut BufferMgr<'b, 'lm>,
+    bm: Arc<BufferMgr<'b, 'lm>>,
 }
 
 impl<'b, 'lm> BufferList<'b, 'lm> {
-    pub(crate) fn new(bm: &'b mut BufferMgr<'b, 'lm>) -> Self {
+    pub(crate) fn new(bm: Arc<BufferMgr<'b, 'lm>>) -> Self {
         Self {
             buffers: HashMap::new(),
             pins: Vec::new(),

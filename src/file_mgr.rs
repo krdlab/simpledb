@@ -153,7 +153,7 @@ impl FileMgrData {
         block: &BlockId,
     ) -> std::result::Result<SeekFrom, TryFromIntError> {
         let blocksize = u64::try_from(blocksize)?;
-        Ok(SeekFrom::Start(block.number() * blocksize))
+        Ok(SeekFrom::Start(block.number_as_u64() * blocksize))
     }
 
     fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
@@ -178,7 +178,7 @@ impl FileMgrData {
 
     fn append(&mut self, filename: &str) -> Result<BlockId> {
         let blocksize = self.blocksize;
-        let newblocknum = self.length(filename)?;
+        let newblocknum = self.length(filename)?.try_into().unwrap();
         let block = BlockId::new(filename, newblocknum);
 
         let file = self.get_file(filename)?;

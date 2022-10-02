@@ -55,7 +55,7 @@ impl<'p> LogMgrData<'p> {
 impl<'p> LogMgr<'p> {
     pub fn new(fm: Arc<FileMgr>, logfile: &str) -> Self {
         let blocksize = fm.blocksize();
-        let logsize = fm.length(logfile).unwrap();
+        let logsize: i64 = fm.length(logfile).unwrap().try_into().unwrap();
 
         let lm = Self {
             fm: fm.clone(),
@@ -84,7 +84,7 @@ impl<'p> LogMgr<'p> {
         Ok(block)
     }
 
-    pub fn apppend(&mut self, logrec: &[u8]) -> Result<LSN> {
+    pub fn apppend(&self, logrec: &[u8]) -> Result<LSN> {
         let mut data = self.data.lock().unwrap();
 
         let mut boundary = data.logpage.get_i32(0)?;
@@ -119,7 +119,7 @@ impl<'p> LogMgr<'p> {
         Ok(())
     }
 
-    pub fn reverse_iter(&mut self) -> Result<LogIterator<'_>> {
+    pub fn reverse_iter(&self) -> Result<LogIterator<'_>> {
         let mut data = self.data.lock().unwrap();
         self._flush(&mut data)?;
 

@@ -139,7 +139,7 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
         data.num_available
     }
 
-    pub fn flush_all(&mut self, txnum: i32) -> Result<()> {
+    pub fn flush_all(&self, txnum: i32) -> Result<()> {
         let data = self.data.lock().unwrap();
         for buff in data.bufferpool.iter() {
             let mut b = buff.lock().unwrap();
@@ -150,7 +150,7 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
         Ok(())
     }
 
-    pub fn unpin(&mut self, buff: Arc<Mutex<Buffer<'b, 'lm>>>) {
+    pub fn unpin(&self, buff: Arc<Mutex<Buffer<'b, 'lm>>>) {
         let mut data = self.data.lock().unwrap();
 
         let mut b = buff.lock().unwrap();
@@ -161,7 +161,7 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
         }
     }
 
-    pub fn pin(&mut self, blk: &BlockId) -> Result<Arc<Mutex<Buffer<'b, 'lm>>>> {
+    pub fn pin(&self, blk: &BlockId) -> Result<Arc<Mutex<Buffer<'b, 'lm>>>> {
         let mut data = self.data.lock().unwrap();
 
         let begintime = SystemTime::now();
