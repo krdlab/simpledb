@@ -16,6 +16,9 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum RecoveryError {
     #[error("{0:?}")]
+    IO(#[from] std::io::Error),
+
+    #[error("{0:?}")]
     PageError(#[from] PageError),
 
     #[error("{0:?}")]
@@ -484,6 +487,114 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{file_mgr::FileMgr, server::simple_db::SimpleDB};
+    use tempfile::{tempdir, TempDir};
+
+    struct Context<'lm, 'bm> {
+        dir: TempDir,
+        db: SimpleDB<'lm, 'bm>,
+        fm: Arc<FileMgr>,
+        bm: Arc<BufferMgr<'bm, 'lm>>,
+        block0: BlockId,
+        block1: BlockId,
+    }
+    impl Context<'_, '_> {
+        pub fn new() -> Self {
+            let dir = tempdir().unwrap();
+            let db = SimpleDB::new(dir.path(), 400, 8);
+            let fm = db.file_mgr();
+            let bm = db.buffer_mgr();
+            Context {
+                dir,
+                db,
+                fm: fm.clone(),
+                bm,
+                block0: BlockId::new("testfile", 0),
+                block1: BlockId::new("testfile", 1),
+            }
+        }
+        pub fn close(self) {
+            self.dir.close().unwrap();
+        }
+    }
+
     #[test]
-    fn test_recovery_mgr() {}
+    fn test_recovery_mgr() -> Result<()> {
+        let mut ctx = Context::new();
+        test_initialize(&mut ctx);
+        test_modify(&ctx);
+        test_recover(&mut ctx);
+        ctx.close();
+        Ok(())
+    }
+
+    fn test_initialize(ctx: &mut Context) {
+        let mut tx1 = ctx.db.new_tx();
+        let mut tx2 = ctx.db.new_tx();
+        tx1.pin(&ctx.block0).unwrap();
+        tx2.pin(&ctx.block1).unwrap();
+
+        let mut pos = 0;
+        for _i in 0..6 {
+            tx1.set_i32(&ctx.block0, pos, pos as i32, false).unwrap();
+            tx2.set_i32(&ctx.block1, pos, pos as i32, false).unwrap();
+            pos += I32_BYTE_SIZE as usize;
+        }
+
+        tx1.set_string(&ctx.block0, 30, "abc", false).unwrap();
+        tx2.set_string(&ctx.block1, 30, "def", false).unwrap();
+        tx1.commit().unwrap();
+        tx2.commit().unwrap();
+
+        print_values(&ctx, "After Initialization:");
+    }
+
+    fn test_modify(ctx: &Context) {
+        let mut tx3 = ctx.db.new_tx();
+        let mut tx4 = ctx.db.new_tx();
+
+        tx3.pin(&ctx.block0).unwrap();
+        tx4.pin(&ctx.block1).unwrap();
+
+        let mut pos = 0;
+        for _i in 0..6 {
+            tx3.set_i32(&ctx.block0, pos, pos as i32 + 100, true)
+                .unwrap();
+            tx4.set_i32(&ctx.block1, pos, pos as i32 + 100, true)
+                .unwrap();
+            pos += I32_BYTE_SIZE as usize;
+        }
+        tx3.set_string(&ctx.block0, 30, "uvw", true).unwrap();
+        tx4.set_string(&ctx.block1, 30, "xyz", true).unwrap();
+        ctx.bm.flush_all(3).unwrap();
+        ctx.bm.flush_all(4).unwrap();
+        print_values(&ctx, "After modification:");
+
+        tx3.rollback().unwrap();
+        print_values(&ctx, "After rollback:");
+    }
+
+    fn test_recover(ctx: &mut Context) {
+        let mut tx = ctx.db.new_tx();
+        tx.recover().unwrap();
+        print_values(&ctx, "After recovery:");
+    }
+
+    fn print_values(ctx: &Context, msg: &str) {
+        println!("{}", msg);
+
+        let mut p0 = Page::for_data(ctx.fm.blocksize());
+        let mut p1 = Page::for_data(ctx.fm.blocksize());
+        ctx.fm.read(&ctx.block0, &mut p0).unwrap();
+        ctx.fm.read(&ctx.block1, &mut p1).unwrap();
+
+        let mut pos = 0;
+        for _i in 0..6 {
+            print!("{:?} {:?} ", p0.get_i32(pos), p1.get_i32(pos));
+            pos += I32_BYTE_SIZE as usize;
+        }
+        print!("{:?} {:?} ", p0.get_string(30), p1.get_string(30));
+        println!();
+    }
 }

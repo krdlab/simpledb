@@ -6,7 +6,7 @@
 use crate::BlockId;
 use std::{
     collections::HashMap,
-    sync::{Condvar, Mutex},
+    sync::{Condvar, Mutex, MutexGuard},
     time::{Duration, SystemTime},
 };
 use thiserror::Error;
@@ -38,7 +38,7 @@ impl LockTable {
         let mut locks = self.locks.lock().unwrap();
 
         let begintime = SystemTime::now();
-        while self.has_xlock(blk) && !self.waiting_too_long(begintime) {
+        while self.has_xlock(&locks, blk) && !self.waiting_too_long(begintime) {
             let result = self
                 .waiting
                 .wait_timeout(locks, Duration::from_millis(MAX_TIME))
@@ -50,10 +50,10 @@ impl LockTable {
             }
         }
 
-        if self.has_xlock(blk) {
+        if self.has_xlock(&locks, blk) {
             Err(LockTableError::LockAborted(blk.clone()))
         } else {
-            let val = self.get_lock_val(blk);
+            let val = self.get_lock_val(&locks, blk);
             locks.insert(blk.clone(), val + 1);
             Ok(())
         }
@@ -63,7 +63,7 @@ impl LockTable {
         let mut locks = self.locks.lock().unwrap();
 
         let begintime = SystemTime::now();
-        while self.has_other_slocks(blk) && !self.waiting_too_long(begintime) {
+        while self.has_other_slocks(&locks, blk) && !self.waiting_too_long(begintime) {
             let result = self
                 .waiting
                 .wait_timeout(locks, Duration::from_millis(MAX_TIME))
@@ -75,7 +75,7 @@ impl LockTable {
             }
         }
 
-        if self.has_other_slocks(blk) {
+        if self.has_other_slocks(&locks, blk) {
             Err(LockTableError::LockAborted(blk.clone()))
         } else {
             locks.insert(blk.clone(), -1);
@@ -85,7 +85,7 @@ impl LockTable {
 
     pub fn unlock(&self, blk: &BlockId) {
         let mut locks = self.locks.lock().unwrap();
-        let val = self.get_lock_val(blk);
+        let val = self.get_lock_val(&locks, blk);
         if val > 1 {
             locks.insert(blk.clone(), val - 1);
         } else {
@@ -102,16 +102,15 @@ impl LockTable {
             > MAX_TIME.into()
     }
 
-    fn has_xlock(&self, blk: &BlockId) -> bool {
-        self.get_lock_val(blk) < 0
+    fn has_xlock(&self, locks: &MutexGuard<HashMap<BlockId, i32>>, blk: &BlockId) -> bool {
+        self.get_lock_val(locks, blk) < 0
     }
 
-    fn has_other_slocks(&self, blk: &BlockId) -> bool {
-        self.get_lock_val(blk) > 1
+    fn has_other_slocks(&self, locks: &MutexGuard<HashMap<BlockId, i32>>, blk: &BlockId) -> bool {
+        self.get_lock_val(locks, blk) > 1
     }
 
-    fn get_lock_val(&self, blk: &BlockId) -> i32 {
-        let locks = self.locks.lock().unwrap();
+    fn get_lock_val(&self, locks: &MutexGuard<HashMap<BlockId, i32>>, blk: &BlockId) -> i32 {
         match locks.get(blk) {
             Some(val) => *val,
             None => 0,
