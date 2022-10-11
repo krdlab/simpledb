@@ -510,8 +510,8 @@ mod tests {
                 db,
                 fm: fm.clone(),
                 bm,
-                block0: BlockId::new("testfile", 0),
-                block1: BlockId::new("testfile", 1),
+                block0: BlockId::new("test_recovery_mgr_file", 0),
+                block1: BlockId::new("test_recovery_mgr_file", 1),
             }
         }
         pub fn close(self) {

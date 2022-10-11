@@ -21,7 +21,7 @@ pub enum PageError {
 pub type Result<T> = core::result::Result<T, PageError>;
 
 pub struct Page<'a> {
-    buf: Box<dyn ByteBuffer + 'a>,
+    buf: Box<dyn ByteBuffer + Send + 'a>,
 }
 
 impl<'a> Page<'a> {
@@ -78,7 +78,7 @@ impl<'a> Page<'a> {
         4 + strlen * bytes_per_char
     }
 
-    pub(crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + 'a>> {
+    pub(crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + Send + 'a>> {
         self.buf.set_position(0)?;
         Ok(&mut self.buf)
     }

@@ -34,12 +34,12 @@ pub type Result<T> = core::result::Result<T, FileMgrError>;
 
 // TODO: rename this to FileExt and move into fileext.rs?
 trait FileChannel<'p, 'b> {
-    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()>;
-    fn write_from(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()>;
+    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()>;
+    fn write_from(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()>;
 }
 
 impl<'p, 'b> FileChannel<'p, 'b> for File {
-    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()> {
+    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()> {
         let rem = buff.get_limit() - buff.get_position();
         let mut bytes = vec![0u8; rem];
         self.read(&mut bytes)?;
@@ -48,7 +48,7 @@ impl<'p, 'b> FileChannel<'p, 'b> for File {
         Ok(())
     }
 
-    fn write_from(&mut self, buf: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()> {
+    fn write_from(&mut self, buf: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()> {
         let pos = buf.get_position();
         let rem = buf.get_limit() - pos;
         let mut bytes = vec![0u8; rem];
