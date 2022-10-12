@@ -216,3 +216,54 @@ impl<'lm, 'bm> Transaction<'lm, 'bm> {
         self.fm.blocksize()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Transaction;
+    use crate::{server::simple_db::SimpleDB, BlockId};
+    use tempfile::tempdir;
+
+    #[test]
+    fn test() {
+        let dir = tempdir().unwrap();
+        let db = SimpleDB::new(dir.path(), 400, 8);
+        {
+            let fm = db.file_mgr();
+            let lm = db.log_mgr();
+            let bm = db.buffer_mgr();
+            let block = BlockId::new("test_transaction_file", 1);
+
+            let mut tx1 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            tx1.pin(&block).unwrap();
+            tx1.set_i32(&block, 80, 1, false).unwrap();
+            tx1.set_string(&block, 40, "one", false).unwrap();
+            tx1.commit().unwrap();
+
+            let mut tx2 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            tx2.pin(&block).unwrap();
+            let ival = tx2.get_i32(&block, 80).unwrap();
+            let sval = tx2.get_string(&block, 40).unwrap();
+            assert_eq!(ival, 1);
+            assert_eq!(sval, "one");
+            let newival = ival + 1;
+            let newsval = sval + "!";
+            tx2.set_i32(&block, 80, newival, true).unwrap();
+            tx2.set_string(&block, 40, &newsval, true).unwrap();
+            tx2.commit().unwrap();
+
+            let mut tx3 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            tx3.pin(&block).unwrap();
+            assert_eq!(tx3.get_i32(&block, 80).unwrap(), newival);
+            assert_eq!(tx3.get_string(&block, 40).unwrap(), newsval);
+            tx3.set_i32(&block, 80, 9999, true).unwrap();
+            assert_eq!(tx3.get_i32(&block, 80).unwrap(), 9999);
+            tx3.rollback().unwrap();
+
+            let mut tx4 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            tx4.pin(&block).unwrap();
+            assert_eq!(tx4.get_i32(&block, 80).unwrap(), newival);
+            tx4.commit().unwrap();
+        }
+        dir.close().unwrap();
+    }
+}
