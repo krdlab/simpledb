@@ -107,7 +107,7 @@ impl<'lm, 'bm> Transaction<'lm, 'bm> {
     }
 
     fn next_txnum() -> i32 {
-        static NEXT_TXNUM: AtomicI32 = AtomicI32::new(0);
+        static NEXT_TXNUM: AtomicI32 = AtomicI32::new(1);
         NEXT_TXNUM.fetch_add(1, Ordering::SeqCst)
     }
 

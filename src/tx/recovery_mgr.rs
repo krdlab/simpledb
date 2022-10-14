@@ -487,12 +487,13 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::{file_mgr::FileMgr, server::simple_db::SimpleDB};
     use tempfile::{tempdir, TempDir};
 
     struct Context<'lm, 'bm> {
-        dir: TempDir,
         db: SimpleDB<'lm, 'bm>,
         fm: Arc<FileMgr>,
         bm: Arc<BufferMgr<'bm, 'lm>>,
@@ -500,13 +501,11 @@ mod tests {
         block1: BlockId,
     }
     impl Context<'_, '_> {
-        pub fn new() -> Self {
-            let dir = tempdir().unwrap();
-            let db = SimpleDB::new(dir.path(), 400, 8);
+        pub fn new(dir: &Path) -> Self {
+            let db = SimpleDB::new(dir, 400, 8);
             let fm = db.file_mgr();
             let bm = db.buffer_mgr();
             Context {
-                dir,
                 db,
                 fm: fm.clone(),
                 bm,
@@ -514,18 +513,21 @@ mod tests {
                 block1: BlockId::new("test_recovery_mgr_file", 1),
             }
         }
-        pub fn close(self) {
-            self.dir.close().unwrap();
-        }
     }
 
     #[test]
     fn test_recovery_mgr() -> Result<()> {
-        let mut ctx = Context::new();
-        test_initialize(&mut ctx);
-        test_modify(&ctx);
-        test_recover(&mut ctx);
-        ctx.close();
+        let dir = tempdir().unwrap();
+        {
+            let mut ctx = Context::new(dir.path());
+            test_initialize(&mut ctx);
+            test_modify(&ctx);
+        }
+        {
+            let mut ctx = Context::new(dir.path());
+            test_recover(&mut ctx);
+        }
+        dir.close().unwrap();
         Ok(())
     }
 
@@ -547,7 +549,11 @@ mod tests {
         tx1.commit().unwrap();
         tx2.commit().unwrap();
 
-        print_values(&ctx, "After Initialization:");
+        assert_values(
+            &ctx,
+            [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
+            ["abc", "def"],
+        );
     }
 
     fn test_modify(ctx: &Context) {
@@ -569,32 +575,43 @@ mod tests {
         tx4.set_string(&ctx.block1, 30, "xyz", true).unwrap();
         ctx.bm.flush_all(3).unwrap();
         ctx.bm.flush_all(4).unwrap();
-        print_values(&ctx, "After modification:");
+        assert_values(
+            &ctx,
+            [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
+            ["abc", "def"],
+        );
 
         tx3.rollback().unwrap();
-        print_values(&ctx, "After rollback:");
+        assert_values(
+            &ctx,
+            [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
+            ["abc", "def"],
+        );
     }
 
     fn test_recover(ctx: &mut Context) {
         let mut tx = ctx.db.new_tx();
         tx.recover().unwrap();
-        print_values(&ctx, "After recovery:");
+        assert_values(
+            &ctx,
+            [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
+            ["abc", "def"],
+        );
     }
 
-    fn print_values(ctx: &Context, msg: &str) {
-        println!("{}", msg);
-
+    fn assert_values(ctx: &Context, expected_i32s: [[i32; 6]; 2], expected_strs: [&str; 2]) {
         let mut p0 = Page::for_data(ctx.fm.blocksize());
         let mut p1 = Page::for_data(ctx.fm.blocksize());
         ctx.fm.read(&ctx.block0, &mut p0).unwrap();
         ctx.fm.read(&ctx.block1, &mut p1).unwrap();
 
         let mut pos = 0;
-        for _i in 0..6 {
-            print!("{:?} {:?} ", p0.get_i32(pos), p1.get_i32(pos));
+        for i in 0..6 {
+            assert_eq!(p0.get_i32(pos).unwrap(), expected_i32s[0][i]);
+            assert_eq!(p1.get_i32(pos).unwrap(), expected_i32s[1][i]);
             pos += I32_BYTE_SIZE as usize;
         }
-        print!("{:?} {:?} ", p0.get_string(30), p1.get_string(30));
-        println!();
+        assert_eq!(p0.get_string(30).unwrap(), expected_strs[0]);
+        assert_eq!(p1.get_string(30).unwrap(), expected_strs[1]);
     }
 }
