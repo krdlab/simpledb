@@ -202,21 +202,74 @@ impl FileMgrData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::simple_db::SimpleDB;
     use tempfile::tempdir;
 
     const TEST_FILE: &str = "test.db";
 
-    // #[test]
-    // fn test_write() -> Result<()> {
-    //     let dir = tempdir()?;
-    //     assert_eq!(dir.path().exists(), true);
-    //     let fm = FileMgr::new(dir.path(), 4096);
+    #[test]
+    fn test_write_and_read() {
+        let dir = tempdir().unwrap();
+        let db = SimpleDB::new_for_test(dir.path(), "test_file_mgr.log");
+        let fm = db.file_mgr();
+        {
+            let block = BlockId::new("test_file_mgr_file", 2);
+            let str_val = "abcdefghijklm";
+            let i32_val = 345;
 
-    //     fm.write(block, page)?;
+            let pos1 = 88;
+            let str_size = Page::max_length(str_val.len());
+            let pos2 = pos1 + str_size;
+            {
+                let mut p1 = Page::for_data(fm.blocksize());
+                p1.set_string(pos1, str_val).unwrap();
+                p1.set_i32(pos2, i32_val).unwrap();
+                fm.write(&block, &mut p1).unwrap();
+            }
 
-    //     dir.close()?;
-    //     Ok(())
-    // }
+            let mut p2 = Page::for_data(fm.blocksize());
+            fm.read(&block, &mut p2).unwrap();
+
+            assert_eq!(p2.get_i32(pos2).unwrap(), 345);
+            assert_eq!(p2.get_string(pos1).unwrap(), "abcdefghijklm");
+        }
+        dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_multi_write_and_read() {
+        let dir = tempdir().unwrap();
+        let db = SimpleDB::new_for_test(dir.path(), "test_file_mgr.log");
+        let fm = db.file_mgr();
+        {
+            let mut p0 = Page::for_data(fm.blocksize());
+            let mut p1 = Page::for_data(fm.blocksize());
+            let block0 = BlockId::new("test_file_mgr_file", 0);
+            let block1 = BlockId::new("test_file_mgr_file", 1);
+
+            let i32_bytes: usize = 4;
+            for i in 0usize..6 {
+                p0.set_i32(i * i32_bytes, (0 * i32_bytes + i).try_into().unwrap())
+                    .unwrap();
+                p1.set_i32(i * i32_bytes, (1 * i32_bytes + i).try_into().unwrap())
+                    .unwrap();
+            }
+            fm.write(&block0, &mut p0).unwrap();
+            fm.write(&block1, &mut p1).unwrap();
+        }
+        {
+            let mut p1 = Page::for_data(fm.blocksize());
+            let block1 = BlockId::new("test_file_mgr_file", 1);
+            fm.read(&block1, &mut p1).unwrap();
+
+            let i32_bytes: usize = 4;
+            for i in 0usize..6 {
+                let v = p1.get_i32(i * i32_bytes).unwrap();
+                assert_eq!(v, (1 * i32_bytes + i).try_into().unwrap())
+            }
+        }
+        dir.close().unwrap();
+    }
 
     #[test]
     fn test_is_new_if_dir_exists() -> Result<()> {

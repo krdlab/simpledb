@@ -206,7 +206,7 @@ mod tests {
         let fm = Arc::new(FileMgr::new(dir.path(), 4096));
         assert_eq!(fm.is_new(), false);
 
-        let mut lm = LogMgr::new(fm, "redo.log");
+        let lm = LogMgr::new(fm, "test_logmgr.log");
 
         let logrec = [1u8, 2u8, 3u8];
         let lsn = lm.apppend(&logrec)?;

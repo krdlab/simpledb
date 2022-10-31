@@ -27,6 +27,9 @@ pub enum RecoveryError {
     #[error("{0:?}")]
     BufferMgrError(#[from] BufferError),
 
+    #[error("failed to undo")]
+    UndoError,
+
     #[error("unknown op: {0:?}")]
     UnknownOp(i32),
 }
@@ -67,10 +70,10 @@ impl Op {
     }
 }
 
-trait LogRecord {
+trait LogRecord: Display {
     fn op(&self) -> Op;
     fn tx_number(&self) -> i32;
-    fn undo<'t>(&self, tx: &'t mut TxInner);
+    fn undo<'t>(&self, tx: &'t mut TxInner) -> Result<()>;
 }
 
 fn create_log_record(mut bytes: Vec<u8>) -> Result<Box<dyn LogRecord>> {
@@ -108,7 +111,9 @@ impl LogRecord for CheckpointRecord {
         -1 // dummy value
     }
 
-    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) -> Result<()> {
+        Ok(())
+    }
 }
 impl Display for CheckpointRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -146,7 +151,9 @@ impl LogRecord for StartRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) -> Result<()> {
+        Ok(())
+    }
 }
 impl Display for StartRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -184,7 +191,9 @@ impl LogRecord for CommitRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) -> Result<()> {
+        Ok(())
+    }
 }
 impl Display for CommitRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -222,7 +231,9 @@ impl LogRecord for RollbackRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, _tx: &'t mut TxInner) {}
+    fn undo<'t>(&self, _tx: &'t mut TxInner) -> Result<()> {
+        Ok(())
+    }
 }
 impl Display for RollbackRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -296,10 +307,17 @@ impl LogRecord for SetIntRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, tx: &'t mut TxInner) {
-        tx.pin(&self.block);
-        tx.set_i32_for_recovery(&self.block, self.offset, self.value);
+    fn undo<'t>(&self, tx: &'t mut TxInner) -> Result<()> {
+        if let Err(e) = tx.pin(&self.block) {
+            println!("undo: pin {:?}", e); // TODO
+            return Err(RecoveryError::UndoError);
+        }
+        if let Err(e) = tx.set_i32_for_recovery(&self.block, self.offset, self.value) {
+            println!("undo: set_i32_for_recovery {:?}", e); // TODO
+            return Err(RecoveryError::UndoError);
+        }
         tx.unpin(&self.block);
+        Ok(())
     }
 }
 impl Display for SetIntRecord {
@@ -385,10 +403,15 @@ impl LogRecord for SetStringRecord {
         self.txnum
     }
 
-    fn undo<'t>(&self, tx: &'t mut TxInner) {
-        tx.pin(&self.block);
-        tx.set_string_for_recovery(&self.block, self.offset, &self.value);
+    fn undo<'t>(&self, tx: &'t mut TxInner) -> Result<()> {
+        if let Err(_) = tx.pin(&self.block) {
+            return Err(RecoveryError::UndoError);
+        }
+        if let Err(_) = tx.set_string_for_recovery(&self.block, self.offset, &self.value) {
+            return Err(RecoveryError::UndoError);
+        }
         tx.unpin(&self.block);
+        Ok(())
     }
 }
 
@@ -421,16 +444,16 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
         Ok(())
     }
 
-    pub(crate) fn rollback<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
-        self.do_rollback(tx);
+    pub(crate) fn rollback<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
+        self.do_rollback(tx)?;
         self.bm.flush_all(self.txnum)?;
         let lsn = RollbackRecord::write_to_log(self.lm.clone(), self.txnum)?;
         self.lm.flush(lsn)?;
         Ok(())
     }
 
-    pub(crate) fn recover<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
-        self.do_recover(tx);
+    pub(crate) fn recover<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
+        self.do_recover(tx)?;
         self.bm.flush_all(self.txnum)?;
         let lsn = CheckpointRecord::write_to_log(self.lm.clone())?;
         self.lm.flush(lsn)?;
@@ -451,7 +474,7 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
         Ok(lsn)
     }
 
-    fn do_rollback<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
+    fn do_rollback<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
         let mut iter = self.lm.reverse_iter()?;
         while iter.has_next() {
             let bytes = iter.next().unwrap();
@@ -460,13 +483,13 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
                 if rec.op() == Op::Start {
                     break;
                 }
-                rec.undo(tx);
+                rec.undo(tx)?;
             }
         }
         Ok(())
     }
 
-    fn do_recover<'tx>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
+    fn do_recover<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
         let mut finished_txs: Vec<i32> = Vec::new();
         let mut iter = self.lm.reverse_iter()?;
         while iter.has_next() {
@@ -478,7 +501,7 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
             if rec.op() == Op::Commit || rec.op() == Op::Rollback {
                 finished_txs.push(rec.tx_number());
             } else if !finished_txs.contains(&rec.tx_number()) {
-                rec.undo(tx);
+                rec.undo(tx)?;
             }
         }
         Ok(())
@@ -491,7 +514,7 @@ mod tests {
 
     use super::*;
     use crate::{file_mgr::FileMgr, server::simple_db::SimpleDB};
-    use tempfile::{tempdir, TempDir};
+    use tempfile::tempdir;
 
     struct Context<'lm, 'bm> {
         db: SimpleDB<'lm, 'bm>,
@@ -502,7 +525,7 @@ mod tests {
     }
     impl Context<'_, '_> {
         pub fn new(dir: &Path) -> Self {
-            let db = SimpleDB::new(dir, 400, 8);
+            let db = SimpleDB::new_for_test(dir, "test_recovery_mgr.log");
             let fm = db.file_mgr();
             let bm = db.buffer_mgr();
             Context {
@@ -516,8 +539,9 @@ mod tests {
     }
 
     #[test]
-    fn test_recovery_mgr() -> Result<()> {
+    fn test_recovery_mgr() {
         let dir = tempdir().unwrap();
+        println!("dir = {:?}", dir.path());
         {
             let mut ctx = Context::new(dir.path());
             test_initialize(&mut ctx);
@@ -525,10 +549,11 @@ mod tests {
         }
         {
             let mut ctx = Context::new(dir.path());
+            // std::fs::copy(dir.path().join("test_recovery_mgr_file"), "./,/test_recovery_mgr_file.before").unwrap();
             test_recover(&mut ctx);
+            // std::fs::copy(dir.path().join("test_recovery_mgr_file"), "./,/test_recovery_mgr_file.after").unwrap();
         }
         dir.close().unwrap();
-        Ok(())
     }
 
     fn test_initialize(ctx: &mut Context) {
@@ -549,7 +574,7 @@ mod tests {
         tx1.commit().unwrap();
         tx2.commit().unwrap();
 
-        assert_values(
+        assert_fm_values(
             &ctx,
             [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
             ["abc", "def"],
@@ -573,33 +598,53 @@ mod tests {
         }
         tx3.set_string(&ctx.block0, 30, "uvw", true).unwrap();
         tx4.set_string(&ctx.block1, 30, "xyz", true).unwrap();
-        ctx.bm.flush_all(3).unwrap();
-        ctx.bm.flush_all(4).unwrap();
-        assert_values(
+        ctx.bm.flush_all(tx3.txnum()).unwrap();
+        ctx.bm.flush_all(tx4.txnum()).unwrap();
+        assert_fm_values(
             &ctx,
-            [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
-            ["abc", "def"],
+            [
+                [100, 104, 108, 112, 116, 120],
+                [100, 104, 108, 112, 116, 120],
+            ],
+            ["uvw", "xyz"],
         );
 
         tx3.rollback().unwrap();
-        assert_values(
+        assert_fm_values(
             &ctx,
-            [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
-            ["abc", "def"],
+            [[0, 4, 8, 12, 16, 20], [100, 104, 108, 112, 116, 120]],
+            ["abc", "xyz"],
         );
     }
 
     fn test_recover(ctx: &mut Context) {
         let mut tx = ctx.db.new_tx();
+        print_fm_values(ctx, &ctx.block1);
         tx.recover().unwrap();
-        assert_values(
+        print_fm_values(ctx, &ctx.block1);
+        assert_fm_values(
             &ctx,
             [[0, 4, 8, 12, 16, 20], [0, 4, 8, 12, 16, 20]],
             ["abc", "def"],
         );
     }
 
-    fn assert_values(ctx: &Context, expected_i32s: [[i32; 6]; 2], expected_strs: [&str; 2]) {
+    fn print_fm_values(ctx: &Context, block: &BlockId) {
+        let mut p = Page::for_data(ctx.fm.blocksize());
+        ctx.fm.read(block, &mut p).unwrap();
+
+        println!(">>> block data ({:?})", block);
+        let mut pos = 0;
+        for _i in 0..6 {
+            let v = p.get_i32(pos);
+            println!("p.get_i32({pos}) = {:?}", v);
+            pos += I32_BYTE_SIZE as usize;
+        }
+        println!("p.get_string(30) = {:?}", p.get_string(30));
+        println!("<<< block data");
+    }
+
+    fn assert_fm_values(ctx: &Context, expected_i32s: [[i32; 6]; 2], expected_strs: [&str; 2]) {
         let mut p0 = Page::for_data(ctx.fm.blocksize());
         let mut p1 = Page::for_data(ctx.fm.blocksize());
         ctx.fm.read(&ctx.block0, &mut p0).unwrap();
@@ -607,8 +652,12 @@ mod tests {
 
         let mut pos = 0;
         for i in 0..6 {
-            assert_eq!(p0.get_i32(pos).unwrap(), expected_i32s[0][i]);
-            assert_eq!(p1.get_i32(pos).unwrap(), expected_i32s[1][i]);
+            let v0 = p0.get_i32(pos).unwrap();
+            assert_eq!(v0, expected_i32s[0][i]);
+
+            let v1 = p1.get_i32(pos).unwrap();
+            assert_eq!(v1, expected_i32s[1][i]);
+
             pos += I32_BYTE_SIZE as usize;
         }
         assert_eq!(p0.get_string(30).unwrap(), expected_strs[0]);

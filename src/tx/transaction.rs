@@ -6,7 +6,7 @@
 use super::{
     buffer_list::BufferList,
     concurrency_mgr::ConcurrencyMgr,
-    lock_table::LockTableError,
+    lock_table::{LockTable, LockTableError},
     recovery_mgr::{RecoveryError, RecoveryMgr},
 };
 use crate::{
@@ -42,12 +42,12 @@ pub enum TransactionError {
 
 pub type Result<T> = core::result::Result<T, TransactionError>;
 
-pub(crate) struct TxInner<'lm, 'bm> {
-    cm: ConcurrencyMgr,
+pub(crate) struct TxInner<'lm, 'bm, 'lt> {
+    cm: ConcurrencyMgr<'lt>,
     bl: BufferList<'bm, 'lm>,
     txnum: i32,
 }
-impl TxInner<'_, '_> {
+impl TxInner<'_, '_, '_> {
     pub fn pin(&mut self, blk: &BlockId) -> Result<()> {
         self.bl.pin(blk)?;
         Ok(())
@@ -83,18 +83,38 @@ impl TxInner<'_, '_> {
     }
 }
 
-pub struct Transaction<'lm, 'bm> {
-    inner: TxInner<'lm, 'bm>,
+pub struct TxNumber {
+    next: AtomicI32,
+}
+impl TxNumber {
+    pub fn new() -> Self {
+        Self {
+            next: AtomicI32::new(1),
+        }
+    }
+
+    pub fn next(&self) -> i32 {
+        self.next.fetch_add(1, Ordering::SeqCst)
+    }
+}
+
+pub struct Transaction<'lm, 'bm, 'lt> {
+    inner: TxInner<'lm, 'bm, 'lt>,
     fm: Arc<FileMgr>,
     bm: Arc<BufferMgr<'bm, 'lm>>,
     rm: RecoveryMgr<'lm, 'bm>,
 }
 
-impl<'lm, 'bm> Transaction<'lm, 'bm> {
-    pub fn new(fm: Arc<FileMgr>, lm: Arc<LogMgr<'lm>>, bm: Arc<BufferMgr<'bm, 'lm>>) -> Self {
-        let txnum = Transaction::next_txnum();
+impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
+    pub fn new(
+        txnum: i32,
+        fm: Arc<FileMgr>,
+        lm: Arc<LogMgr<'lm>>,
+        bm: Arc<BufferMgr<'bm, 'lm>>,
+        lock_table: &'lt LockTable,
+    ) -> Self {
         let inner = TxInner {
-            cm: ConcurrencyMgr::new(),
+            cm: ConcurrencyMgr::new(lock_table),
             bl: BufferList::new(bm.clone()),
             txnum,
         };
@@ -106,9 +126,8 @@ impl<'lm, 'bm> Transaction<'lm, 'bm> {
         }
     }
 
-    fn next_txnum() -> i32 {
-        static NEXT_TXNUM: AtomicI32 = AtomicI32::new(1);
-        NEXT_TXNUM.fetch_add(1, Ordering::SeqCst)
+    pub fn txnum(&self) -> i32 {
+        self.inner.txnum
     }
 
     pub fn pin(&mut self, blk: &BlockId) -> Result<()> {
@@ -122,7 +141,6 @@ impl<'lm, 'bm> Transaction<'lm, 'bm> {
 
     pub fn commit(&mut self) -> Result<()> {
         self.rm.commit()?;
-        println!("transaction {} committed", self.inner.txnum);
         self.inner.cm.release();
         self.inner.bl.unpin_all();
         Ok(())
@@ -130,7 +148,6 @@ impl<'lm, 'bm> Transaction<'lm, 'bm> {
 
     pub fn rollback(&mut self) -> Result<()> {
         self.rm.rollback(&mut self.inner)?;
-        println!("transaction {} rolled back", self.inner.txnum);
         self.inner.cm.release();
         self.inner.bl.unpin_all();
         Ok(())
@@ -219,27 +236,23 @@ impl<'lm, 'bm> Transaction<'lm, 'bm> {
 
 #[cfg(test)]
 mod tests {
-    use super::Transaction;
     use crate::{server::simple_db::SimpleDB, BlockId};
     use tempfile::tempdir;
 
     #[test]
     fn test() {
         let dir = tempdir().unwrap();
-        let db = SimpleDB::new(dir.path(), 400, 8);
+        let db = SimpleDB::new_for_test(dir.path(), "test_transaction.log");
         {
-            let fm = db.file_mgr();
-            let lm = db.log_mgr();
-            let bm = db.buffer_mgr();
             let block = BlockId::new("test_transaction_file", 1);
 
-            let mut tx1 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            let mut tx1 = db.new_tx();
             tx1.pin(&block).unwrap();
             tx1.set_i32(&block, 80, 1, false).unwrap();
             tx1.set_string(&block, 40, "one", false).unwrap();
             tx1.commit().unwrap();
 
-            let mut tx2 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            let mut tx2 = db.new_tx();
             tx2.pin(&block).unwrap();
             let ival = tx2.get_i32(&block, 80).unwrap();
             let sval = tx2.get_string(&block, 40).unwrap();
@@ -251,7 +264,7 @@ mod tests {
             tx2.set_string(&block, 40, &newsval, true).unwrap();
             tx2.commit().unwrap();
 
-            let mut tx3 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            let mut tx3 = db.new_tx();
             tx3.pin(&block).unwrap();
             assert_eq!(tx3.get_i32(&block, 80).unwrap(), newival);
             assert_eq!(tx3.get_string(&block, 40).unwrap(), newsval);
@@ -259,7 +272,7 @@ mod tests {
             assert_eq!(tx3.get_i32(&block, 80).unwrap(), 9999);
             tx3.rollback().unwrap();
 
-            let mut tx4 = Transaction::new(fm.clone(), lm.clone(), bm.clone());
+            let mut tx4 = db.new_tx();
             tx4.pin(&block).unwrap();
             assert_eq!(tx4.get_i32(&block, 80).unwrap(), newival);
             tx4.commit().unwrap();

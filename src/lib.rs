@@ -11,7 +11,7 @@ mod constants;
 mod file_mgr;
 mod log_mgr;
 mod page;
-mod server;
+pub mod server;
 mod tx;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

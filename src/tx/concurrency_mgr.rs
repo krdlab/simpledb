@@ -3,12 +3,9 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use std::collections::HashMap;
-
-use crate::BlockId;
-
 use super::lock_table::{LockTable, Result};
-use once_cell::sync::OnceCell;
+use crate::BlockId;
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq)]
 enum LockType {
@@ -16,25 +13,22 @@ enum LockType {
     X,
 }
 
-pub struct ConcurrencyMgr {
+pub struct ConcurrencyMgr<'lt> {
+    lock_table: &'lt LockTable,
     locks: HashMap<BlockId, LockType>,
 }
 
-impl ConcurrencyMgr {
-    fn lock_table() -> &'static LockTable {
-        static LOCK_TABLE: OnceCell<LockTable> = OnceCell::new();
-        LOCK_TABLE.get_or_init(|| LockTable::new())
-    }
-
-    pub fn new() -> Self {
+impl<'lt> ConcurrencyMgr<'lt> {
+    pub fn new(lock_table: &'lt LockTable) -> Self {
         Self {
+            lock_table,
             locks: HashMap::new(),
         }
     }
 
     pub fn slock(&mut self, blk: &BlockId) -> Result<()> {
         if !self.locks.contains_key(blk) {
-            ConcurrencyMgr::lock_table().slock(blk)?;
+            self.lock_table.slock(blk)?;
             self.locks.insert(blk.clone(), LockType::S);
         }
         Ok(())
@@ -43,7 +37,7 @@ impl ConcurrencyMgr {
     pub fn xlock(&mut self, blk: &BlockId) -> Result<()> {
         if !self.has_xlock(blk) {
             self.slock(blk)?;
-            ConcurrencyMgr::lock_table().xlock(blk)?;
+            self.lock_table.xlock(blk)?;
             self.locks.insert(blk.clone(), LockType::X);
         }
         Ok(())
@@ -58,7 +52,7 @@ impl ConcurrencyMgr {
 
     pub fn release(&mut self) {
         for blk in self.locks.keys() {
-            ConcurrencyMgr::lock_table().unlock(blk);
+            self.lock_table.unlock(blk);
         }
         self.locks.clear();
     }
@@ -66,26 +60,17 @@ impl ConcurrencyMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        buffer_mgr::BufferMgr, file_mgr::FileMgr, log_mgr::LogMgr, server::simple_db::SimpleDB,
-        tx::transaction::Transaction, BlockId,
-    };
+    use crate::{server::simple_db::SimpleDB, BlockId};
     use std::{path::Path, sync::Arc, thread, time::Duration};
     use tempfile::tempdir;
 
     struct Context<'lm, 'bm> {
         db: SimpleDB<'lm, 'bm>,
-        fm: Arc<FileMgr>,
-        lm: Arc<LogMgr<'lm>>,
-        bm: Arc<BufferMgr<'bm, 'lm>>,
     }
     impl Context<'_, '_> {
         pub fn new(path: &Path) -> Self {
-            let db = SimpleDB::new(path, 400, 8);
-            let fm = db.file_mgr();
-            let lm = db.log_mgr();
-            let bm = db.buffer_mgr();
-            Context { db, fm, lm, bm }
+            let db = SimpleDB::new_for_test(path, "test_concurrency_mgr.log");
+            Context { db }
         }
     }
 
@@ -98,7 +83,7 @@ mod tests {
         {
             let ctx1 = ctx.clone();
             let th1 = thread::spawn(move || {
-                let mut tx = Transaction::new(ctx1.fm.clone(), ctx1.lm.clone(), ctx1.bm.clone());
+                let mut tx = ctx1.db.new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
@@ -121,7 +106,7 @@ mod tests {
 
             let ctx2 = ctx.clone();
             let th2 = thread::spawn(move || {
-                let mut tx = Transaction::new(ctx2.fm.clone(), ctx2.lm.clone(), ctx2.bm.clone());
+                let mut tx = ctx2.db.new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
@@ -144,7 +129,7 @@ mod tests {
 
             let ctx3 = ctx.clone();
             let th3 = thread::spawn(move || {
-                let mut tx = Transaction::new(ctx3.fm.clone(), ctx3.lm.clone(), ctx3.bm.clone());
+                let mut tx = ctx3.db.new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);

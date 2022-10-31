@@ -3,9 +3,13 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use simpledb::BlockId;
+use simpledb::server::simple_db::SimpleDB;
+use std::env;
 
 fn main() {
-    let b = BlockId::new("", 0);
-    println!("{:?}", b);
+    let curr_dir = env::current_dir().unwrap();
+    let db = SimpleDB::new(&curr_dir.join("db"), 400, 8);
+    let mut tx = db.new_tx();
+    tx.rollback().unwrap();
+    println!("OK");
 }

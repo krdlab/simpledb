@@ -168,12 +168,16 @@ impl<'b, 'lm> BufferMgr<'b, 'lm> {
 
         let mut buff = data.try_to_pin(blk);
         while buff.is_none() && !self.waiting_too_long(begintime) {
-            data = self
+            let result = self
                 .waiting
                 .wait_timeout(data, Duration::from_millis(MAX_TIME))
-                .unwrap()
-                .0;
-            buff = data.try_to_pin(blk);
+                .unwrap();
+            if result.1.timed_out() {
+                return Err(BufferError::Aborted);
+            } else {
+                data = result.0;
+                buff = data.try_to_pin(blk);
+            }
         }
 
         match buff {
@@ -245,9 +249,14 @@ mod tests {
     use std::path::Path;
     use tempfile::tempdir;
 
-    fn buffer_mgr(dir_path: &Path, blocksize: usize, numbuffs: usize) -> BufferMgr {
+    fn buffer_mgr<'b, 'lm>(
+        dir_path: &Path,
+        blocksize: usize,
+        logfile: &str,
+        numbuffs: usize,
+    ) -> BufferMgr<'b, 'lm> {
         let fm = Arc::new(FileMgr::new(dir_path, blocksize));
-        let lm = Arc::new(LogMgr::new(fm.clone(), "redo.log"));
+        let lm = Arc::new(LogMgr::new(fm.clone(), logfile));
         BufferMgr::new(fm.clone(), lm.clone(), numbuffs)
     }
 
@@ -256,7 +265,7 @@ mod tests {
         let dir = tempdir()?;
         assert_eq!(dir.path().exists(), true);
         {
-            let mut bm = buffer_mgr(dir.path(), 400, 3);
+            let bm = buffer_mgr(dir.path(), 400, "test_buffer.log", 3);
 
             let buff1 = bm.pin(&BlockId::new("testfile", 1))?;
             {
@@ -295,7 +304,7 @@ mod tests {
         let dir = tempdir()?;
         assert_eq!(dir.path().exists(), true);
         {
-            let mut bm = buffer_mgr(dir.path(), 400, 3);
+            let bm = buffer_mgr(dir.path(), 400, "test_buffermgr.log", 3);
 
             let mut buff = array![None; 6];
             buff[0] = Some(bm.pin(&BlockId::new("testfile", 0))?);
