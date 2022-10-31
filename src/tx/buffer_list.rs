@@ -5,7 +5,7 @@
 
 use crate::{
     buffer_mgr::{Buffer, BufferMgr, Result},
-    BlockId,
+    file::block_id::BlockId,
 };
 use std::{
     collections::HashMap,

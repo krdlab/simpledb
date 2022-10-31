@@ -5,10 +5,10 @@
 
 use super::transaction::TxInner;
 use crate::buffer_mgr::{Buffer, BufferError, BufferMgr};
-use crate::log_mgr::{LogMgrError, LSN};
-use crate::page::{Page, PageError};
-use crate::{constants::I32_BYTE_SIZE, log_mgr::LogMgr, BlockId};
-use crate::{log_mgr, page};
+use crate::file::block_id::BlockId;
+use crate::file::page::{self, Page, PageError};
+use crate::log_mgr::{self, LogMgrError, LSN};
+use crate::{constants::I32_BYTE_SIZE, log_mgr::LogMgr};
 use std::sync::Arc;
 use std::{convert::TryInto, fmt::Display};
 use thiserror::Error;
@@ -510,10 +510,9 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use super::*;
-    use crate::{file_mgr::FileMgr, server::simple_db::SimpleDB};
+    use crate::{file::file_mgr::FileMgr, server::simple_db::SimpleDB};
+    use std::path::Path;
     use tempfile::tempdir;
 
     struct Context<'lm, 'bm> {

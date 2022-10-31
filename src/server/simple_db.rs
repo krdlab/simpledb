@@ -7,7 +7,7 @@ use std::{path::Path, sync::Arc};
 
 use crate::{
     buffer_mgr::BufferMgr,
-    file_mgr::FileMgr,
+    file::file_mgr::FileMgr,
     log_mgr::LogMgr,
     tx::{
         lock_table::LockTable,

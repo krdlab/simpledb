@@ -11,10 +11,12 @@ use super::{
 };
 use crate::{
     buffer_mgr::{BufferError, BufferMgr},
-    file_mgr::{FileMgr, FileMgrError},
+    file::{
+        block_id::BlockId,
+        file_mgr::{FileMgr, FileMgrError},
+        page::PageError,
+    },
     log_mgr::LogMgr,
-    page::PageError,
-    BlockId,
 };
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
@@ -236,7 +238,7 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{server::simple_db::SimpleDB, BlockId};
+    use crate::{file::block_id::BlockId, server::simple_db::SimpleDB};
     use tempfile::tempdir;
 
     #[test]

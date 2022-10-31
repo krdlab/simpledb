@@ -3,11 +3,11 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use crate::{
+use super::{
     byte_buffer::{ByteBuffer, ByteBufferError},
     page::{Page, PageError},
-    BlockId,
 };
+use crate::file::block_id::BlockId;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fs::{self, File},

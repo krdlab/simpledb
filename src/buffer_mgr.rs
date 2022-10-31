@@ -4,10 +4,12 @@
 // https://opensource.org/licenses/MIT
 
 use crate::{
-    file_mgr::{FileMgr, FileMgrError},
+    file::{
+        block_id::BlockId,
+        file_mgr::{FileMgr, FileMgrError},
+        page::Page,
+    },
     log_mgr::{LogMgr, LogMgrError, LSN},
-    page::Page,
-    BlockId,
 };
 use std::{
     iter::repeat_with,

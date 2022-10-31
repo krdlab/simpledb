@@ -3,13 +3,14 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use crate::BlockId;
 use std::{
     collections::HashMap,
     sync::{Condvar, Mutex, MutexGuard},
     time::{Duration, SystemTime},
 };
 use thiserror::Error;
+
+use crate::file::block_id::BlockId;
 
 const MAX_TIME: u64 = 10000; // 10 sec
 

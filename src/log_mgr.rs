@@ -5,9 +5,11 @@
 
 use crate::{
     constants::I32_BYTE_SIZE,
-    file_mgr::{FileMgr, FileMgrError},
-    page::{Page, PageError},
-    BlockId,
+    file::{
+        block_id::BlockId,
+        file_mgr::{FileMgr, FileMgrError},
+        page::{Page, PageError},
+    },
 };
 use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
@@ -142,10 +144,7 @@ impl<'lm> LogIterator<'lm> {
 
         let mut iter = Self {
             fm,
-            block: BlockId {
-                filename: blk.filename.to_string(),
-                blknum: blk.blknum,
-            },
+            block: BlockId::new(blk.filename(), blk.number()),
             page: Page::for_data(blocksize),
             currentpos: 0,
             boundary: 0,

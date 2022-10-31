@@ -4,7 +4,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::lock_table::{LockTable, Result};
-use crate::BlockId;
+use crate::file::block_id::BlockId;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -60,7 +60,7 @@ impl<'lt> ConcurrencyMgr<'lt> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{server::simple_db::SimpleDB, BlockId};
+    use crate::{file::block_id::BlockId, server::simple_db::SimpleDB};
     use std::{path::Path, sync::Arc, thread, time::Duration};
     use tempfile::tempdir;
 
