@@ -207,18 +207,16 @@ mod tests {
 
         let lm = LogMgr::new(fm, "test_logmgr.log");
 
-        let logrec = [1u8, 2u8, 3u8];
-        let lsn = lm.apppend(&logrec)?;
-        assert_eq!(lsn, 1);
+        let logrec1 = [1u8, 2u8, 3u8];
+        let logrec2 = [4u8, 5u8, 6u8];
+        assert_eq!(lm.apppend(&logrec1)?, 1);
+        assert_eq!(lm.apppend(&logrec2)?, 2);
 
         let mut it = lm.reverse_iter()?;
         assert_eq!(it.has_next(), true);
-
-        let rec = match it.next() {
-            Some(r) => r,
-            None => vec![],
-        };
-        assert_eq!(rec, logrec);
+        assert_eq!(it.next().unwrap(), logrec2);
+        assert_eq!(it.next().unwrap(), logrec1);
+        assert_eq!(it.has_next(), false);
 
         dir.close()?;
         Ok(())
