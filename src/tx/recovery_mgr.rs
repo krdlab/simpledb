@@ -27,8 +27,8 @@ pub enum RecoveryError {
     #[error("{0:?}")]
     BufferMgrError(#[from] BufferError),
 
-    #[error("failed to undo")]
-    UndoError,
+    #[error("failed to undo: {0:?}")]
+    UndoError(String),
 
     #[error("unknown op: {0:?}")]
     UnknownOp(i32),
@@ -309,12 +309,10 @@ impl LogRecord for SetIntRecord {
 
     fn undo<'t>(&self, tx: &'t mut TxInner) -> Result<()> {
         if let Err(e) = tx.pin(&self.block) {
-            println!("undo: pin {:?}", e); // TODO
-            return Err(RecoveryError::UndoError);
+            return Err(RecoveryError::UndoError(e.to_string()));
         }
         if let Err(e) = tx.set_i32_for_recovery(&self.block, self.offset, self.value) {
-            println!("undo: set_i32_for_recovery {:?}", e); // TODO
-            return Err(RecoveryError::UndoError);
+            return Err(RecoveryError::UndoError(e.to_string()));
         }
         tx.unpin(&self.block);
         Ok(())
@@ -405,11 +403,11 @@ impl LogRecord for SetStringRecord {
     }
 
     fn undo<'t>(&self, tx: &'t mut TxInner) -> Result<()> {
-        if let Err(_) = tx.pin(&self.block) {
-            return Err(RecoveryError::UndoError);
+        if let Err(e) = tx.pin(&self.block) {
+            return Err(RecoveryError::UndoError(e.to_string()));
         }
-        if let Err(_) = tx.set_string_for_recovery(&self.block, self.offset, &self.value) {
-            return Err(RecoveryError::UndoError);
+        if let Err(e) = tx.set_string_for_recovery(&self.block, self.offset, &self.value) {
+            return Err(RecoveryError::UndoError(e.to_string()));
         }
         tx.unpin(&self.block);
         Ok(())
