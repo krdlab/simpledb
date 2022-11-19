@@ -79,6 +79,16 @@ impl FileMgr {
         if is_new {
             fs::create_dir_all(db_dir_path).expect("failed to create db directory");
         }
+        let leftover = fs::read_dir(db_dir_path).unwrap();
+        for entry in leftover {
+            if let Ok(e) = entry {
+                if let Some(name) = e.file_name().to_str() {
+                    if name.starts_with("temp") {
+                        fs::remove_file(e.path()).unwrap();
+                    }
+                }
+            }
+        }
         FileMgr {
             blocksize,
             is_new,
