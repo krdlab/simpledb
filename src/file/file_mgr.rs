@@ -158,21 +158,17 @@ impl FileMgrData {
 
     fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
         let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
-
         let file = self.get_file(block.filename())?;
         file.seek(pos)?;
-
         file.read_to(page.contents()?)?;
         Ok(())
     }
 
     fn write(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
         let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
-
-        let f = self.get_file(block.filename())?;
-        f.seek(pos)?;
-
-        f.write_from(page.contents()?)?;
+        let file = self.get_file(block.filename())?;
+        file.seek(pos)?;
+        file.write_from(page.contents()?)?;
         Ok(())
     }
 
