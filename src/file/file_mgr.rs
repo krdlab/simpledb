@@ -136,7 +136,7 @@ impl FileMgrData {
 
     fn open_file(path: &Path) -> Result<File> {
         if path.exists() {
-            Ok(File::options().read(true).append(true).open(path)?)
+            Ok(File::options().read(true).write(true).open(path)?)
         } else {
             Ok(File::options()
                 .read(true)
