@@ -539,7 +539,6 @@ mod tests {
     #[test]
     fn test_recovery_mgr() {
         let dir = tempdir().unwrap();
-        println!("dir = {:?}", dir.path());
         {
             let mut ctx = Context::new(dir.path());
             test_initialize(&mut ctx);
@@ -547,9 +546,7 @@ mod tests {
         }
         {
             let mut ctx = Context::new(dir.path());
-            // std::fs::copy(dir.path().join("test_recovery_mgr_file"), "./,/test_recovery_mgr_file.before").unwrap();
             test_recover(&mut ctx);
-            // std::fs::copy(dir.path().join("test_recovery_mgr_file"), "./,/test_recovery_mgr_file.after").unwrap();
         }
         dir.close().unwrap();
     }
@@ -631,7 +628,7 @@ mod tests {
         let mut p = Page::for_data(ctx.fm.blocksize());
         ctx.fm.read(block, &mut p).unwrap();
 
-        println!(">>> block data ({:?})", block);
+        println!("print: block data ({:?})", block);
         let mut pos = 0;
         for _i in 0..6 {
             let v = p.get_i32(pos);
@@ -639,7 +636,7 @@ mod tests {
             pos += I32_BYTE_SIZE as usize;
         }
         println!("p.get_string(30) = {:?}", p.get_string(30));
-        println!("<<< block data");
+        println!("print: block data");
     }
 
     fn assert_fm_values(ctx: &Context, expected_i32s: [[i32; 6]; 2], expected_strs: [&str; 2]) {
