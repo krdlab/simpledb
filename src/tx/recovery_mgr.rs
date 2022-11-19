@@ -387,6 +387,7 @@ impl SetStringRecord {
             p.set_i32(0, Op::SetString.to_i32())?;
             p.set_i32(tpos, txnum)?;
             p.set_string(fpos, blk.filename())?;
+            p.set_i32(bpos, blk.number().try_into().unwrap())?;
             p.set_i32(opos, offset.try_into().unwrap())?;
             p.set_string(vpos, val.as_str())?;
         }
