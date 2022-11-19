@@ -4,14 +4,16 @@
 // https://opensource.org/licenses/MIT
 
 use super::{
-    byte_buffer::{ByteBuffer, ByteBufferError},
+    byte_buffer::ByteBufferError,
     page::{Page, PageError},
+    random_access_file::FileError,
 };
 use crate::file::block_id::BlockId;
+use crate::file::random_access_file::RandomAccessFile;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fs::{self, File},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom, Write},
     num::TryFromIntError,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -24,6 +26,9 @@ pub enum FileMgrError {
     IO(#[from] std::io::Error),
 
     #[error("{0:?}")]
+    File(#[from] FileError),
+
+    #[error("{0:?}")]
     Byte(#[from] ByteBufferError),
 
     #[error("{0:?}")]
@@ -31,35 +36,6 @@ pub enum FileMgrError {
 }
 
 pub type Result<T> = core::result::Result<T, FileMgrError>;
-
-// TODO: rename this to FileExt and move into fileext.rs?
-trait FileChannel<'p, 'b> {
-    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()>;
-    fn write_from(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()>;
-}
-
-impl<'p, 'b> FileChannel<'p, 'b> for File {
-    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()> {
-        let rem = buff.get_limit() - buff.get_position();
-        let mut bytes = vec![0u8; rem];
-        self.read(&mut bytes)?;
-
-        buff.put(&bytes)?;
-        Ok(())
-    }
-
-    fn write_from(&mut self, buf: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()> {
-        let pos = buf.get_position();
-        let rem = buf.get_limit() - pos;
-        let mut bytes = vec![0u8; rem];
-        buf.get(&mut bytes)?;
-
-        self.write(&bytes)?;
-
-        buf.set_position(pos)?;
-        Ok(())
-    }
-}
 
 pub struct FileMgr {
     blocksize: usize,
@@ -169,16 +145,14 @@ impl FileMgrData {
     fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
         let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
         let file = self.get_file(block.filename())?;
-        file.seek(pos)?;
-        file.read_to(page.contents()?)?;
+        file.read_to(pos, page.contents()?)?;
         Ok(())
     }
 
     fn write(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
         let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
         let file = self.get_file(block.filename())?;
-        file.seek(pos)?;
-        file.write_from(page.contents()?)?;
+        file.write_from(pos, page.contents()?)?;
         Ok(())
     }
 
