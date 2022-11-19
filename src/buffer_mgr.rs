@@ -269,7 +269,7 @@ mod tests {
         {
             let bm = buffer_mgr(dir.path(), 400, "test_buffer.log", 3);
 
-            let buff1 = bm.pin(&BlockId::new("testfile", 1))?;
+            let buff1 = bm.pin(&BlockId::new("test_buffer_mgr", 1))?;
             {
                 let mut b1 = buff1.lock().unwrap();
                 let p = b1.contents();
@@ -280,13 +280,13 @@ mod tests {
             }
             bm.unpin(buff1);
 
-            let mut buff2 = bm.pin(&BlockId::new("testfile", 2))?;
-            let _buff3 = bm.pin(&BlockId::new("testfile", 3))?;
-            let _buff4 = bm.pin(&BlockId::new("testfile", 4))?;
+            let mut buff2 = bm.pin(&BlockId::new("test_buffer_mgr", 2))?;
+            let _buff3 = bm.pin(&BlockId::new("test_buffer_mgr", 3))?;
+            let _buff4 = bm.pin(&BlockId::new("test_buffer_mgr", 4))?;
 
             bm.unpin(buff2);
 
-            buff2 = bm.pin(&BlockId::new("testfile", 1))?;
+            buff2 = bm.pin(&BlockId::new("test_buffer_mgr", 1))?;
             {
                 let mut b2 = buff2.lock().unwrap();
                 let p2 = b2.contents();
@@ -309,18 +309,18 @@ mod tests {
             let bm = buffer_mgr(dir.path(), 400, "test_buffermgr.log", 3);
 
             let mut buff = array![None; 6];
-            buff[0] = Some(bm.pin(&BlockId::new("testfile", 0))?);
-            buff[1] = Some(bm.pin(&BlockId::new("testfile", 1))?);
-            buff[2] = Some(bm.pin(&BlockId::new("testfile", 2))?);
+            buff[0] = Some(bm.pin(&BlockId::new("test_buffer_mgr", 0))?);
+            buff[1] = Some(bm.pin(&BlockId::new("test_buffer_mgr", 1))?);
+            buff[2] = Some(bm.pin(&BlockId::new("test_buffer_mgr", 2))?);
 
             let b1 = buff[1].take().unwrap();
             bm.unpin(b1);
 
-            buff[3] = Some(bm.pin(&BlockId::new("testfile", 0))?);
-            buff[4] = Some(bm.pin(&BlockId::new("testfile", 1))?);
+            buff[3] = Some(bm.pin(&BlockId::new("test_buffer_mgr", 0))?);
+            buff[4] = Some(bm.pin(&BlockId::new("test_buffer_mgr", 1))?);
             assert_eq!(bm.available(), 0); // TODO
             {
-                let result = bm.pin(&BlockId::new("testfile", 3));
+                let result = bm.pin(&BlockId::new("test_buffer_mgr", 3));
                 assert_eq!(result.is_err(), true);
                 assert_eq!(
                     result.err().unwrap().to_string(),
@@ -331,7 +331,7 @@ mod tests {
             let b2 = buff[2].take().unwrap();
             bm.unpin(b2);
 
-            buff[5] = Some(bm.pin(&BlockId::new("testfile", 3))?);
+            buff[5] = Some(bm.pin(&BlockId::new("test_buffer_mgr", 3))?);
         }
         dir.close()?;
         Ok(())
