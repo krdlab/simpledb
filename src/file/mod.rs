@@ -7,3 +7,4 @@ pub mod block_id;
 pub mod byte_buffer;
 pub mod file_mgr;
 pub mod page;
+pub mod random_access_file;
