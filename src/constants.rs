@@ -3,9 +3,6 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-mod buffer_mgr;
-mod constants;
-mod file;
-mod log_mgr;
-pub mod server;
-mod tx;
+use std::mem::size_of;
+
+pub const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32;

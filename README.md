@@ -9,7 +9,7 @@
 - [x] JDBC
 - [x] Disk and File Management
 - [x] Memory Management
-- [ ] Transaction Management
+- [x] Transaction Management
 - [ ] Record Management
 - [ ] Metadata Management
 - [ ] Query Processing

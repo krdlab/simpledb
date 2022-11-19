@@ -3,11 +3,10 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use super::byte_buffer::{AllocatedBuffer, ByteBuffer, ByteBufferError, WrappedBuffer};
 use std::string::FromUtf8Error;
 use std::vec;
 use thiserror::Error;
-
-use crate::byte_buffer::*;
 
 #[derive(Debug, Error)]
 pub enum PageError {
@@ -21,7 +20,7 @@ pub enum PageError {
 pub type Result<T> = core::result::Result<T, PageError>;
 
 pub struct Page<'a> {
-    buf: Box<dyn ByteBuffer + 'a>,
+    buf: Box<dyn ByteBuffer + Send + 'a>,
 }
 
 impl<'a> Page<'a> {
@@ -73,12 +72,12 @@ impl<'a> Page<'a> {
         }
     }
 
-    fn max_length(strlen: usize) -> usize {
+    pub(crate) fn max_length(strlen: usize) -> usize {
         let bytes_per_char: usize = 4; // TODO
         4 + strlen * bytes_per_char
     }
 
-    pub(in crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + 'a>> {
+    pub(crate) fn contents(&mut self) -> Result<&mut Box<dyn ByteBuffer + Send + 'a>> {
         self.buf.set_position(0)?;
         Ok(&mut self.buf)
     }

@@ -3,11 +3,11 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use crate::{
+use super::{
     byte_buffer::{ByteBuffer, ByteBufferError},
     page::{Page, PageError},
-    BlockId,
 };
+use crate::file::block_id::BlockId;
 use std::{
     collections::{hash_map::Entry, HashMap},
     fs::{self, File},
@@ -34,12 +34,12 @@ pub type Result<T> = core::result::Result<T, FileMgrError>;
 
 // TODO: rename this to FileExt and move into fileext.rs?
 trait FileChannel<'p, 'b> {
-    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()>;
-    fn write_from(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()>;
+    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()>;
+    fn write_from(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()>;
 }
 
 impl<'p, 'b> FileChannel<'p, 'b> for File {
-    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()> {
+    fn read_to(&mut self, buff: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()> {
         let rem = buff.get_limit() - buff.get_position();
         let mut bytes = vec![0u8; rem];
         self.read(&mut bytes)?;
@@ -48,7 +48,7 @@ impl<'p, 'b> FileChannel<'p, 'b> for File {
         Ok(())
     }
 
-    fn write_from(&mut self, buf: &'p mut Box<dyn ByteBuffer + 'b>) -> Result<()> {
+    fn write_from(&mut self, buf: &'p mut Box<dyn ByteBuffer + Send + 'b>) -> Result<()> {
         let pos = buf.get_position();
         let rem = buf.get_limit() - pos;
         let mut bytes = vec![0u8; rem];
@@ -78,6 +78,16 @@ impl FileMgr {
         let is_new = !db_dir_path.exists();
         if is_new {
             fs::create_dir_all(db_dir_path).expect("failed to create db directory");
+        }
+        let leftover = fs::read_dir(db_dir_path).unwrap();
+        for entry in leftover {
+            if let Ok(e) = entry {
+                if let Some(name) = e.file_name().to_str() {
+                    if name.starts_with("temp") {
+                        fs::remove_file(e.path()).unwrap();
+                    }
+                }
+            }
         }
         FileMgr {
             blocksize,
@@ -109,14 +119,14 @@ impl FileMgr {
         data.append(filename)
     }
 
-    pub(in crate) fn length(&self, filename: &str) -> Result<u64> {
+    pub(crate) fn length(&self, filename: &str) -> Result<u64> {
         let mut data = self.data.lock().unwrap();
         data.length(filename)
     }
 }
 
 impl FileMgrData {
-    pub(in crate) fn new(db_dir_path: PathBuf, blocksize: usize) -> Self {
+    pub(crate) fn new(db_dir_path: PathBuf, blocksize: usize) -> Self {
         Self {
             db_dir_path,
             blocksize,
@@ -126,7 +136,7 @@ impl FileMgrData {
 
     fn open_file(path: &Path) -> Result<File> {
         if path.exists() {
-            Ok(File::options().read(true).append(true).open(path)?)
+            Ok(File::options().read(true).write(true).open(path)?)
         } else {
             Ok(File::options()
                 .read(true)
@@ -153,32 +163,28 @@ impl FileMgrData {
         block: &BlockId,
     ) -> std::result::Result<SeekFrom, TryFromIntError> {
         let blocksize = u64::try_from(blocksize)?;
-        Ok(SeekFrom::Start(block.number() * blocksize))
+        Ok(SeekFrom::Start(block.number_as_u64() * blocksize))
     }
 
     fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
         let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
-
         let file = self.get_file(block.filename())?;
         file.seek(pos)?;
-
         file.read_to(page.contents()?)?;
         Ok(())
     }
 
     fn write(&mut self, block: &BlockId, page: &mut Page) -> Result<()> {
         let pos = FileMgrData::calc_seek_pos(self.blocksize, block).unwrap();
-
-        let f = self.get_file(block.filename())?;
-        f.seek(pos)?;
-
-        f.write_from(page.contents()?)?;
+        let file = self.get_file(block.filename())?;
+        file.seek(pos)?;
+        file.write_from(page.contents()?)?;
         Ok(())
     }
 
     fn append(&mut self, filename: &str) -> Result<BlockId> {
         let blocksize = self.blocksize;
-        let newblocknum = self.length(filename)?;
+        let newblocknum = self.length(filename)?.try_into().unwrap();
         let block = BlockId::new(filename, newblocknum);
 
         let file = self.get_file(filename)?;
@@ -202,21 +208,74 @@ impl FileMgrData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::simple_db::SimpleDB;
     use tempfile::tempdir;
 
     const TEST_FILE: &str = "test.db";
 
-    // #[test]
-    // fn test_write() -> Result<()> {
-    //     let dir = tempdir()?;
-    //     assert_eq!(dir.path().exists(), true);
-    //     let fm = FileMgr::new(dir.path(), 4096);
+    #[test]
+    fn test_write_and_read() {
+        let dir = tempdir().unwrap();
+        let db = SimpleDB::new_for_test(dir.path(), "test_file_mgr.log");
+        let fm = db.file_mgr();
+        {
+            let block = BlockId::new("test_file_mgr_file", 2);
+            let str_val = "abcdefghijklm";
+            let i32_val = 345;
 
-    //     fm.write(block, page)?;
+            let pos1 = 88;
+            let str_size = Page::max_length(str_val.len());
+            let pos2 = pos1 + str_size;
+            {
+                let mut p1 = Page::for_data(fm.blocksize());
+                p1.set_string(pos1, str_val).unwrap();
+                p1.set_i32(pos2, i32_val).unwrap();
+                fm.write(&block, &mut p1).unwrap();
+            }
 
-    //     dir.close()?;
-    //     Ok(())
-    // }
+            let mut p2 = Page::for_data(fm.blocksize());
+            fm.read(&block, &mut p2).unwrap();
+
+            assert_eq!(p2.get_i32(pos2).unwrap(), 345);
+            assert_eq!(p2.get_string(pos1).unwrap(), "abcdefghijklm");
+        }
+        dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_multi_write_and_read() {
+        let dir = tempdir().unwrap();
+        let db = SimpleDB::new_for_test(dir.path(), "test_file_mgr.log");
+        let fm = db.file_mgr();
+        {
+            let mut p0 = Page::for_data(fm.blocksize());
+            let mut p1 = Page::for_data(fm.blocksize());
+            let block0 = BlockId::new("test_file_mgr_file", 0);
+            let block1 = BlockId::new("test_file_mgr_file", 1);
+
+            let i32_bytes: usize = 4;
+            for i in 0usize..6 {
+                p0.set_i32(i * i32_bytes, (0 * i32_bytes + i).try_into().unwrap())
+                    .unwrap();
+                p1.set_i32(i * i32_bytes, (1 * i32_bytes + i).try_into().unwrap())
+                    .unwrap();
+            }
+            fm.write(&block0, &mut p0).unwrap();
+            fm.write(&block1, &mut p1).unwrap();
+        }
+        {
+            let mut p1 = Page::for_data(fm.blocksize());
+            let block1 = BlockId::new("test_file_mgr_file", 1);
+            fm.read(&block1, &mut p1).unwrap();
+
+            let i32_bytes: usize = 4;
+            for i in 0usize..6 {
+                let v = p1.get_i32(i * i32_bytes).unwrap();
+                assert_eq!(v, (1 * i32_bytes + i).try_into().unwrap())
+            }
+        }
+        dir.close().unwrap();
+    }
 
     #[test]
     fn test_is_new_if_dir_exists() -> Result<()> {
