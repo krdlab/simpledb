@@ -8,7 +8,7 @@ use std::fmt::Display;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BlockId {
     filename: String,
-    blknum: i64,
+    blknum: i64,    // NOTE: -1 if it's EOF
 }
 
 impl BlockId {
