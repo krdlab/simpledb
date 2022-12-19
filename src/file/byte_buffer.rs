@@ -90,6 +90,9 @@ impl ByteBuffer for AllocatedBuffer {
     }
 
     fn get(&mut self, dst: &mut [u8]) -> Result<()> {
+        if dst.len() == 0 {
+            return Ok(());
+        }
         check_len(&self.buf, self.pos + dst.len())?;
         let bs = self
             .buf
@@ -99,6 +102,9 @@ impl ByteBuffer for AllocatedBuffer {
     }
 
     fn put(&mut self, src: &[u8]) -> Result<()> {
+        if src.len() == 0 {
+            return Ok(());
+        }
         check_len(&self.buf, self.pos + src.len())?;
         self.buf.write::<&[u8]>(&mut self.pos, src)?;
         Ok(())
@@ -149,6 +155,9 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
     }
 
     fn get(&mut self, dst: &mut [u8]) -> Result<()> {
+        if dst.len() == 0 {
+            return Ok(());
+        }
         check_len(self.buf, self.pos + dst.len())?;
         let bs = self
             .buf
@@ -158,6 +167,9 @@ impl<'a> ByteBuffer for WrappedBuffer<'a> {
     }
 
     fn put(&mut self, src: &[u8]) -> Result<()> {
+        if src.len() == 0 {
+            return Ok(());
+        }
         check_len(self.buf, self.pos + src.len())?;
         self.buf.write::<&[u8]>(&mut self.pos, src)?;
         Ok(())
@@ -189,6 +201,12 @@ mod tests {
     }
 
     #[test]
+    fn test_allocated_buffer_uses_zerobytes() -> Result<()> {
+        let mut b = AllocatedBuffer::new(10);
+        test_put_and_get_zerobytes(&mut b)
+    }
+
+    #[test]
     fn test_wrapped_buffer_set_position() -> Result<()> {
         let mut buf = [0u8; 10];
         let mut b = WrappedBuffer::new(&mut buf);
@@ -216,6 +234,17 @@ mod tests {
             test_put_and_get_bytes(&mut b)?;
         }
         assert_eq!(buf, [0x1, 0x2, 0x3, 0x4, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrapped_buffer_uses_zerobytes() -> Result<()> {
+        let mut buf = [0u8; 10];
+        {
+            let mut b = WrappedBuffer::new(&mut buf);
+            test_put_and_get_zerobytes(&mut b)?;
+        }
+        assert_eq!(buf, [0u8; 10]);
         Ok(())
     }
 
@@ -254,6 +283,29 @@ mod tests {
         b.get(&mut dst)?;
         assert_eq!(dst, [3, 4, 5]);
         assert_eq!(b.get_position(), 5);
+
+        Ok(())
+    }
+
+    fn test_put_and_get_zerobytes<'a, B>(b: &mut B) -> Result<()>
+    where
+        B: ByteBuffer,
+    {
+        let mut prev;
+
+        prev = b.get_position();
+        let src: [u8; 0] = [];
+        b.put(&src)?;
+        assert_eq!(b.get_position(), prev);
+
+        b.set_position(2)?;
+        assert_eq!(b.get_position(), 2);
+
+        prev = b.get_position();
+        let mut dst = [];
+        b.get(&mut dst)?;
+        assert_eq!(dst, []);
+        assert_eq!(b.get_position(), prev);
 
         Ok(())
     }

@@ -4,3 +4,4 @@
 // https://opensource.org/licenses/MIT
 
 pub mod schema;
+pub mod record_page;
