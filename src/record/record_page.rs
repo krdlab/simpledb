@@ -4,8 +4,23 @@
 // https://opensource.org/licenses/MIT
 
 use super::schema::{Layout, SqlType};
-use crate::{file::block_id::BlockId, tx::transaction::Transaction};
+use crate::{
+    file::block_id::BlockId,
+    tx::transaction::{Transaction, TransactionError},
+};
 use std::convert::Into;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum RecordPageError {
+    #[error("invalid slot: {0:?}")]
+    InvalidSlot(Option<i32>),
+
+    #[error("{0:?}")]
+    Transaction(#[from] TransactionError),
+}
+
+pub type Result<T> = core::result::Result<T, RecordPageError>;
 
 #[derive(Debug, PartialEq, Eq)]
 enum SlotFlag {
@@ -48,9 +63,9 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
         slot: i32,
         fname: &str,
-    ) -> Result<i32, crate::tx::transaction::TransactionError> {
+    ) -> Result<i32> {
         let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        tx.get_i32(&self.block, fpos)
+        Ok(tx.get_i32(&self.block, fpos)?)
     }
 
     pub fn set_i32(
@@ -59,9 +74,9 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         fname: &str,
         value: i32,
-    ) -> Result<(), crate::tx::transaction::TransactionError> {
+    ) -> Result<()> {
         let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        tx.set_i32(&self.block, fpos, value, true)
+        Ok(tx.set_i32(&self.block, fpos, value, true)?)
     }
 
     pub fn get_string(
@@ -69,9 +84,9 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
         slot: i32,
         fname: &str,
-    ) -> Result<String, crate::tx::transaction::TransactionError> {
+    ) -> Result<String> {
         let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        tx.get_string(&self.block, fpos)
+        Ok(tx.get_string(&self.block, fpos)?)
     }
 
     pub fn set_string(
@@ -80,23 +95,16 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         fname: &str,
         value: String,
-    ) -> Result<(), crate::tx::transaction::TransactionError> {
+    ) -> Result<()> {
         let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        tx.set_string(&self.block, fpos, &value, true)
+        Ok(tx.set_string(&self.block, fpos, &value, true)?)
     }
 
-    pub fn delete(
-        &self,
-        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
-        slot: i32,
-    ) -> Result<(), crate::tx::transaction::TransactionError> {
-        self.set_flag(tx, slot, SlotFlag::Empty)
+    pub fn delete(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> Result<()> {
+        Ok(self.set_flag(tx, slot, SlotFlag::Empty)?)
     }
 
-    pub fn format(
-        &self,
-        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
-    ) -> Result<(), crate::tx::transaction::TransactionError> {
+    pub fn format(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>) -> Result<()> {
         let mut slot = 0;
         while self.is_valid_slot(tx, slot) {
             tx.set_i32(
@@ -120,11 +128,19 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         Ok(())
     }
 
-    pub fn next_after(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> Option<i32> {
+    pub fn next_after(
+        &self,
+        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
+        slot: Option<i32>,
+    ) -> Option<i32> {
         self.search_after(tx, slot, SlotFlag::Used)
     }
 
-    pub fn insert_after(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> Option<i32> {
+    pub fn insert_after(
+        &self,
+        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
+        slot: Option<i32>,
+    ) -> Option<i32> {
         if let Some(newslot) = self.search_after(tx, slot, SlotFlag::Empty) {
             self.set_flag(tx, newslot, SlotFlag::Used).unwrap(); // TODO
             Some(newslot)
@@ -138,17 +154,17 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
         slot: i32,
         flag: SlotFlag,
-    ) -> Result<(), crate::tx::transaction::TransactionError> {
-        tx.set_i32(&self.block, self.get_offset(slot), flag.into(), true)
+    ) -> Result<()> {
+        Ok(tx.set_i32(&self.block, self.get_offset(slot), flag.into(), true)?)
     }
 
     fn search_after(
         &self,
         tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
-        slot: i32,
+        slot: Option<i32>,
         flag: SlotFlag,
     ) -> Option<i32> {
-        let mut next = slot + 1;
+        let mut next = slot.map(|s| s + 1).unwrap_or(0);
         let flag_i32: i32 = flag.into();
         while self.is_valid_slot(tx, next) {
             if tx.get_i32(&self.block, self.get_offset(next)).unwrap() == flag_i32 {
@@ -192,22 +208,22 @@ mod tests {
                 let rp = RecordPage::new(block.clone(), &layout);
                 rp.format(&mut tx).unwrap();
 
-                let mut prev_slot = -1;
+                let mut prev_slot = None;
                 while let Some(slot) = rp.insert_after(&mut tx, prev_slot) {
                     let n = slot;
                     rp.set_i32(&mut tx, slot, "A", n).unwrap();
                     rp.set_string(&mut tx, slot, "B", format!("rec{}", n))
                         .unwrap();
-                    prev_slot = slot;
+                    prev_slot = Some(slot);
                 }
 
-                prev_slot = -1;
+                prev_slot = None;
                 while let Some(slot) = rp.next_after(&mut tx, prev_slot) {
                     let a = rp.get_i32(&mut tx, slot, "A").unwrap();
                     assert_eq!(a, slot);
                     let b = rp.get_string(&mut tx, slot, "B").unwrap();
                     assert_eq!(b, format!("rec{}", slot));
-                    prev_slot = slot;
+                    prev_slot = Some(slot);
                 }
 
                 let slot_num = db.file_mgr().blocksize() / layout.get_slotsize();
@@ -216,7 +232,7 @@ mod tests {
 
                 let prev_slot_a = rp.get_i32(&mut tx, target_slot - 1, "A").unwrap();
                 assert_eq!(prev_slot_a, target_slot - 1);
-                let next_slot = rp.search_after(&mut tx, target_slot - 1, SlotFlag::Used);
+                let next_slot = rp.search_after(&mut tx, Some(target_slot - 1), SlotFlag::Used);
                 assert_eq!(next_slot, Some(target_slot + 1));
 
                 tx.unpin(&block);

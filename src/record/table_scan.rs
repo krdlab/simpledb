@@ -41,7 +41,7 @@ pub struct TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     layout: &'ly Layout,
     filename: String,
     rp: RecordPage<'ly>,
-    current_slot: i32,
+    current_slot: Option<i32>,
 }
 // TODO: impl UpdateScan for TableScan
 
@@ -75,7 +75,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
             layout,
             filename,
             rp,
-            current_slot: -1,
+            current_slot: None,
         }
     }
 
@@ -88,7 +88,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         let block = BlockId::new(&self.filename, blknum);
         self.tx.pin(&block).unwrap(); // TODO
         self.rp = RecordPage::new(block, self.layout);
-        self.current_slot = -1;
+        self.current_slot = None;
     }
 
     fn move_to_new_block(&mut self) {
@@ -97,7 +97,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         self.tx.pin(&block).unwrap(); // TODO
         self.rp = RecordPage::new(block, self.layout);
         self.rp.format(self.tx).unwrap(); // TODO
-        self.current_slot = -1;
+        self.current_slot = None;
     }
 
     pub fn before_first(&mut self) {
@@ -109,25 +109,25 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn next(&mut self) -> bool {
-        self.current_slot = self.rp.next_after(self.tx, self.current_slot).unwrap_or(-1);
-        while self.current_slot < 0 {
+        self.current_slot = self.rp.next_after(self.tx, self.current_slot);
+        while self.current_slot.is_none() {
             if self.as_last_block() {
                 return false;
             }
             self.move_to_block(self.rp.get_block().number() + 1);
-            self.current_slot = self.rp.next_after(self.tx, self.current_slot).unwrap_or(-1);
+            self.current_slot = self.rp.next_after(self.tx, self.current_slot);
         }
         true
     }
 
     pub fn get_i32(&mut self, fname: &str) -> i32 {
-        self.rp.get_i32(self.tx, self.current_slot, fname).unwrap()
+        let slot = self.current_slot.as_ref().unwrap();
+        self.rp.get_i32(self.tx, *slot, fname).unwrap()
     }
 
     pub fn get_string(&mut self, fname: &str) -> String {
-        self.rp
-            .get_string(self.tx, self.current_slot, fname)
-            .unwrap()
+        let slot = self.current_slot.as_ref().unwrap();
+        self.rp.get_string(self.tx, *slot, fname).unwrap()
     }
 
     pub fn get_val(&mut self, fname: &str) -> Constant {
@@ -143,11 +143,13 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn set_i32(&mut self, fname: &str, val: i32) {
-        self.rp.set_i32(self.tx, self.current_slot, fname, val);
+        let slot = self.current_slot.as_ref().unwrap();
+        self.rp.set_i32(self.tx, *slot, fname, val);
     }
 
     pub fn set_string(&mut self, fname: &str, val: String) {
-        self.rp.set_string(self.tx, self.current_slot, fname, val);
+        let slot = self.current_slot.as_ref().unwrap();
+        self.rp.set_string(self.tx, *slot, fname, val);
     }
 
     pub fn set_val(&mut self, fname: &str, val: Constant) {
@@ -160,25 +162,20 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn insert(&mut self) {
-        self.current_slot = self
-            .rp
-            .insert_after(self.tx, self.current_slot)
-            .unwrap_or(-1);
-        while self.current_slot < 0 {
+        self.current_slot = self.rp.insert_after(self.tx, self.current_slot);
+        while self.current_slot.is_none() {
             if self.as_last_block() {
                 self.move_to_new_block();
             } else {
                 self.move_to_block(self.rp.get_block().number() + 1);
             }
-            self.current_slot = self
-                .rp
-                .insert_after(self.tx, self.current_slot)
-                .unwrap_or(-1);
+            self.current_slot = self.rp.insert_after(self.tx, self.current_slot);
         }
     }
 
     pub fn delete(&mut self) {
-        self.rp.delete(self.tx, self.current_slot).unwrap();
+        let slot = self.current_slot.as_ref().unwrap();
+        self.rp.delete(self.tx, *slot).unwrap();
     }
 }
 
