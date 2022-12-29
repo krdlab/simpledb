@@ -10,7 +10,7 @@
 - [x] Disk and File Management
 - [x] Memory Management
 - [x] Transaction Management
-- [ ] Record Management
+- [x] Record Management
 - [ ] Metadata Management
 - [ ] Query Processing
 - [ ] Parsing
