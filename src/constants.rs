@@ -5,4 +5,4 @@
 
 use std::mem::size_of;
 
-pub const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32;
+pub const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32; // TODO: change to usize
