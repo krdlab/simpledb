@@ -131,7 +131,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn get_val(&mut self, fname: &str) -> Constant {
-        if self.layout.get_schema().get_type(fname).unwrap() == SqlType::Integer {
+        if self.layout.schema().field_type(fname).unwrap() == SqlType::Integer {
             return Constant::Int(self.get_i32(fname));
         } else {
             return Constant::String(self.get_string(fname));
@@ -139,7 +139,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn has_field(&self, fname: &str) -> bool {
-        self.layout.get_schema().has_field(fname)
+        self.layout.schema().has_field(fname)
     }
 
     pub fn set_i32(&mut self, fname: &str, val: i32) {
@@ -153,7 +153,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn set_val(&mut self, fname: &str, val: Constant) {
-        let ftype = self.layout.get_schema().get_type(fname);
+        let ftype = self.layout.schema().field_type(fname);
         match val {
             Constant::Int(v) if ftype == Some(SqlType::Integer) => self.set_i32(fname, v),
             Constant::String(v) if ftype == Some(SqlType::VarChar) => self.set_string(fname, v),

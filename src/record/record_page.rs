@@ -47,7 +47,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
 
     fn get_offset(&self, slot: i32) -> usize {
         assert!(slot >= 0);
-        (slot as usize) * self.layout.get_slotsize()
+        (slot as usize) * self.layout.slotsize()
     }
 
     fn is_valid_slot(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> bool {
@@ -64,7 +64,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         fname: &str,
     ) -> Result<i32> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
+        let fpos = self.get_offset(slot) + self.layout.field_offset(fname).unwrap();
         Ok(tx.get_i32(&self.block, fpos)?)
     }
 
@@ -75,7 +75,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         fname: &str,
         value: i32,
     ) -> Result<()> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
+        let fpos = self.get_offset(slot) + self.layout.field_offset(fname).unwrap();
         Ok(tx.set_i32(&self.block, fpos, value, true)?)
     }
 
@@ -85,7 +85,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         fname: &str,
     ) -> Result<String> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
+        let fpos = self.get_offset(slot) + self.layout.field_offset(fname).unwrap();
         Ok(tx.get_string(&self.block, fpos)?)
     }
 
@@ -96,7 +96,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         fname: &str,
         value: String,
     ) -> Result<()> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
+        let fpos = self.get_offset(slot) + self.layout.field_offset(fname).unwrap();
         Ok(tx.set_string(&self.block, fpos, &value, true)?)
     }
 
@@ -113,10 +113,10 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
                 SlotFlag::Empty.into(),
                 false,
             )?;
-            let schema = self.layout.get_schema();
+            let schema = self.layout.schema();
             for fname in schema.fields_iter() {
-                let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-                let ftype = schema.get_type(fname).unwrap();
+                let fpos = self.get_offset(slot) + self.layout.field_offset(fname).unwrap();
+                let ftype = schema.field_type(fname).unwrap();
                 if ftype == SqlType::Integer {
                     tx.set_i32(&self.block, fpos, 0, false)?;
                 } else {
@@ -226,7 +226,7 @@ mod tests {
                     prev_slot = Some(slot);
                 }
 
-                let slot_num = db.file_mgr().blocksize() / layout.get_slotsize();
+                let slot_num = db.file_mgr().blocksize() / layout.slotsize();
                 let target_slot = (slot_num / 2) as i32;
                 rp.delete(&mut tx, target_slot).unwrap();
 

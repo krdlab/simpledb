@@ -42,8 +42,8 @@ impl TableMgr {
     }
 
     pub fn init(&self, tx: &mut Transaction) {
-        self.create_table("tblcat", self.tcat_layout.get_schema().clone(), tx);
-        self.create_table("fldcat", self.fcat_layout.get_schema().clone(), tx);
+        self.create_table("tblcat", self.tcat_layout.schema().clone(), tx);
+        self.create_table("fldcat", self.fcat_layout.schema().clone(), tx);
     }
 
     pub fn create_table(&self, tblname: &str, schema: Schema, tx: &mut Transaction) {
@@ -51,14 +51,14 @@ impl TableMgr {
         let mut tcat = TableScan::new(tx, "tblcat", &self.tcat_layout);
         tcat.insert();
         tcat.set_string("tblname", tblname.into());
-        tcat.set_i32("slotsize", layout.get_slotsize().try_into().unwrap()); // TODO
+        tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap()); // TODO
         tcat.close();
 
         let mut fcat = TableScan::new(tx, "fldcat", &self.fcat_layout);
         for fldname in schema.fields_iter() {
-            let ftype = schema.get_type(fldname).unwrap(); // NOTE: If the returned value is None, it's a bug.
-            let flength = schema.get_length(fldname).unwrap(); // NOTE: same as above
-            let foffset = layout.get_offset(fldname).unwrap();
+            let ftype = schema.field_type(fldname).unwrap(); // NOTE: If the returned value is None, it's a bug.
+            let flength = schema.field_length(fldname).unwrap(); // NOTE: same as above
+            let foffset = layout.field_offset(fldname).unwrap();
             fcat.insert();
             fcat.set_string("tblname", tblname.into());
             fcat.set_string("fldname", fldname.into());
@@ -135,20 +135,20 @@ mod tests {
                 tm.create_table("MyTable", schema, &mut tx);
 
                 let layout = tm.layout("MyTable", &mut tx).unwrap();
-                assert_eq!(layout.get_slotsize(), 48); // NOTE: 4 + 4 + 4 (area of string bytes length) + (9 (field length) * 4 (bytes/char))
+                assert_eq!(layout.slotsize(), 48); // NOTE: 4 + 4 + 4 (area of string bytes length) + (9 (field length) * 4 (bytes/char))
 
-                let schema2 = layout.get_schema();
+                let schema2 = layout.schema();
                 let mut field_iter = schema2.fields_iter();
 
                 let f1 = field_iter.next().unwrap();
                 assert_eq!(f1, "A");
-                assert_eq!(schema2.get_type(f1), Some(SqlType::Integer));
-                assert_eq!(schema2.get_length(f1), Some(0)); // NOTE: an integer value is 0 length
+                assert_eq!(schema2.field_type(f1), Some(SqlType::Integer));
+                assert_eq!(schema2.field_length(f1), Some(0)); // NOTE: an integer value is 0 length
 
                 let f2 = field_iter.next().unwrap();
                 assert_eq!(f2, "B");
-                assert_eq!(schema2.get_type(f2), Some(SqlType::VarChar));
-                assert_eq!(schema2.get_length(f2), Some(9));
+                assert_eq!(schema2.field_type(f2), Some(SqlType::VarChar));
+                assert_eq!(schema2.field_length(f2), Some(9));
 
                 assert_eq!(field_iter.next(), None);
             }
