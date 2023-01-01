@@ -80,7 +80,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn close(&mut self) {
-        self.tx.unpin(self.rp.get_block());
+        self.tx.unpin(self.rp.block());
     }
 
     fn move_to_block(&mut self, blknum: i64) {
@@ -105,7 +105,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     fn as_last_block(&mut self) -> bool {
-        self.rp.get_block().number() as u64 == self.tx.size(&self.filename).unwrap() - 1
+        self.rp.block().number() as u64 == self.tx.size(&self.filename).unwrap() - 1
     }
 
     pub fn next(&mut self) -> bool {
@@ -114,7 +114,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
             if self.as_last_block() {
                 return false;
             }
-            self.move_to_block(self.rp.get_block().number() + 1);
+            self.move_to_block(self.rp.block().number() + 1);
             self.current_slot = self.rp.next_after(self.tx, self.current_slot);
         }
         true
@@ -167,7 +167,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
             if self.as_last_block() {
                 self.move_to_new_block();
             } else {
-                self.move_to_block(self.rp.get_block().number() + 1);
+                self.move_to_block(self.rp.block().number() + 1);
             }
             self.current_slot = self.rp.insert_after(self.tx, self.current_slot);
         }
