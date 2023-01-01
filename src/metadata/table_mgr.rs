@@ -58,25 +58,26 @@ impl TableMgr {
 
     pub fn create_table(&self, tblname: &str, schema: Schema, tx: &mut Transaction) {
         let layout = Layout::new(schema.clone());
-        let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
-        tcat.insert();
-        tcat.set_string("tblname", tblname.into());
-        tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap()); // TODO
-        tcat.close();
-
-        let mut fcat = TableScan::new(tx, FIELD_CATALOG_TABLE_NAME, &self.fcat_layout);
-        for fldname in schema.fields_iter() {
-            let ftype = schema.field_type(fldname).unwrap(); // NOTE: If the returned value is None, it's a bug.
-            let flength = schema.field_length(fldname).unwrap(); // NOTE: same as above
-            let foffset = layout.field_offset(fldname).unwrap();
-            fcat.insert();
-            fcat.set_string("tblname", tblname.into());
-            fcat.set_string("fldname", fldname.into());
-            fcat.set_i32("type", ftype.into());
-            fcat.set_i32("length", flength.try_into().unwrap()); // TODO
-            fcat.set_i32("offset", foffset.try_into().unwrap()); // TODO
+        {
+            let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
+            tcat.insert();
+            tcat.set_string("tblname", tblname.into());
+            tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap()); // TODO
         }
-        fcat.close();
+        {
+            let mut fcat = TableScan::new(tx, FIELD_CATALOG_TABLE_NAME, &self.fcat_layout);
+            for fldname in schema.fields_iter() {
+                let ftype = schema.field_type(fldname).unwrap(); // NOTE: If the returned value is None, it's a bug.
+                let flength = schema.field_length(fldname).unwrap(); // NOTE: same as above
+                let foffset = layout.field_offset(fldname).unwrap();
+                fcat.insert();
+                fcat.set_string("tblname", tblname.into());
+                fcat.set_string("fldname", fldname.into());
+                fcat.set_i32("type", ftype.into());
+                fcat.set_i32("length", flength.try_into().unwrap()); // TODO
+                fcat.set_i32("offset", foffset.try_into().unwrap()); // TODO
+            }
+        }
     }
 
     fn table_slotsize(&self, tblname: &str, tx: &mut Transaction) -> Option<usize> {
@@ -87,7 +88,6 @@ impl TableMgr {
                 return Some(size);
             }
         }
-        tcat.close();
         None
     }
 
@@ -111,7 +111,6 @@ impl TableMgr {
                     ); // TODO
                 }
             }
-            fcat.close();
 
             Some(Layout::from_metadata(schema, offsets, size))
         } else {

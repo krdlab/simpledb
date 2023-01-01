@@ -79,7 +79,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         }
     }
 
-    pub fn close(&mut self) {
+    fn close(&mut self) {
         self.tx.unpin(self.rp.block());
     }
 
@@ -179,6 +179,12 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 }
 
+impl<'tx, 'lm, 'bm, 'lt, 'ly> Drop for TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::TableScan;
@@ -231,7 +237,6 @@ mod tests {
                     assert_eq!(ts.get_string("B"), format!("rec{i}"));
                     i += 2;
                 }
-                ts.close();
             }
             tx.commit().unwrap();
         }
