@@ -235,5 +235,6 @@ mod tests {
             }
             tx.commit().unwrap();
         }
+        dir.close().unwrap();
     }
 }
