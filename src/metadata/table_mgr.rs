@@ -19,18 +19,19 @@ pub struct TableMgr {
 }
 
 pub const MAX_NAME_LENGTH: usize = 16;
-const TABLE_CATALOG_TABLE_NAME: &str = "tblcat";
+pub const TABLE_CATALOG_TABLE_NAME: &str = "tblcat";
+pub const TABLE_NAME_FIELD: &str = "tblname";
 const FIELD_CATALOG_TABLE_NAME: &str = "fldcat";
 
 impl TableMgr {
     pub fn new() -> Self {
         let mut tcat_schema = Schema::new();
-        tcat_schema.add_string_field("tblname", MAX_NAME_LENGTH);
+        tcat_schema.add_string_field(TABLE_NAME_FIELD, MAX_NAME_LENGTH);
         tcat_schema.add_i32_field("slotsize");
         let tcat_layout = Layout::new(tcat_schema);
 
         let mut fcat_schema = Schema::new();
-        fcat_schema.add_string_field("tblname", MAX_NAME_LENGTH);
+        fcat_schema.add_string_field(TABLE_NAME_FIELD, MAX_NAME_LENGTH);
         fcat_schema.add_string_field("fldname", MAX_NAME_LENGTH);
         fcat_schema.add_i32_field("type");
         fcat_schema.add_i32_field("length");
@@ -61,7 +62,7 @@ impl TableMgr {
         {
             let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
             tcat.insert();
-            tcat.set_string("tblname", tblname.into());
+            tcat.set_string(TABLE_NAME_FIELD, tblname.into());
             tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap()); // TODO
         }
         {
@@ -71,7 +72,7 @@ impl TableMgr {
                 let flength = schema.field_length(fldname).unwrap(); // NOTE: same as above
                 let foffset = layout.field_offset(fldname).unwrap();
                 fcat.insert();
-                fcat.set_string("tblname", tblname.into());
+                fcat.set_string(TABLE_NAME_FIELD, tblname.into());
                 fcat.set_string("fldname", fldname.into());
                 fcat.set_i32("type", ftype.into());
                 fcat.set_i32("length", flength.try_into().unwrap()); // TODO
@@ -83,7 +84,7 @@ impl TableMgr {
     fn table_slotsize(&self, tblname: &str, tx: &mut Transaction) -> Option<usize> {
         let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
         while tcat.next() {
-            if tcat.get_string("tblname") == tblname {
+            if tcat.get_string(TABLE_NAME_FIELD) == tblname {
                 let size = tcat.get_i32("slotsize").try_into().unwrap();
                 return Some(size);
             }
@@ -98,7 +99,7 @@ impl TableMgr {
 
             let mut fcat = TableScan::new(tx, FIELD_CATALOG_TABLE_NAME, &self.fcat_layout);
             while fcat.next() {
-                if fcat.get_string("tblname") == tblname {
+                if fcat.get_string(TABLE_NAME_FIELD) == tblname {
                     let fname = fcat.get_string("fldname");
                     let ftype = fcat.get_i32("type");
                     let flength = fcat.get_i32("length");
@@ -123,7 +124,7 @@ impl TableMgr {
 mod tests {
     use super::{TableMgr, FIELD_CATALOG_TABLE_NAME, TABLE_CATALOG_TABLE_NAME};
     use crate::{
-        metadata::table_mgr::MAX_NAME_LENGTH,
+        metadata::table_mgr::{MAX_NAME_LENGTH, TABLE_NAME_FIELD},
         record::{
             schema::{Schema, SqlType},
             table_scan::TableScan,
@@ -185,10 +186,10 @@ mod tests {
                 {
                     let mut ts = TableScan::new(&mut tx, TABLE_CATALOG_TABLE_NAME, &tcat_layout);
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), TABLE_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), TABLE_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_i32("slotsize") as usize, tcat_layout.slotsize());
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), FIELD_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), FIELD_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_i32("slotsize") as usize, fcat_layout.slotsize());
                     assert_eq!(ts.next(), false);
                 }
@@ -197,16 +198,16 @@ mod tests {
 
                     // NOTE: table catalog's fields
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), TABLE_CATALOG_TABLE_NAME);
-                    assert_eq!(ts.get_string("fldname"), "tblname");
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), TABLE_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string("fldname"), TABLE_NAME_FIELD);
                     assert_eq!(ts.get_i32("type"), SqlType::VarChar.into());
                     assert_eq!(ts.get_i32("length") as usize, MAX_NAME_LENGTH);
                     assert_eq!(
                         ts.get_i32("offset") as usize,
-                        tcat_layout.field_offset("tblname").unwrap()
+                        tcat_layout.field_offset(TABLE_NAME_FIELD).unwrap()
                     );
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), TABLE_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), TABLE_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_string("fldname"), "slotsize");
                     assert_eq!(ts.get_i32("type"), SqlType::Integer.into());
                     assert_eq!(ts.get_i32("length") as usize, 0);
@@ -217,16 +218,16 @@ mod tests {
 
                     // NOTE: field catalog's fields
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), FIELD_CATALOG_TABLE_NAME);
-                    assert_eq!(ts.get_string("fldname"), "tblname");
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), FIELD_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string("fldname"), TABLE_NAME_FIELD);
                     assert_eq!(ts.get_i32("type"), SqlType::VarChar.into());
                     assert_eq!(ts.get_i32("length") as usize, MAX_NAME_LENGTH);
                     assert_eq!(
                         ts.get_i32("offset") as usize,
-                        fcat_layout.field_offset("tblname").unwrap()
+                        fcat_layout.field_offset(TABLE_NAME_FIELD).unwrap()
                     );
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), FIELD_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), FIELD_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_string("fldname"), "fldname");
                     assert_eq!(ts.get_i32("type"), SqlType::VarChar.into());
                     assert_eq!(ts.get_i32("length") as usize, MAX_NAME_LENGTH);
@@ -235,7 +236,7 @@ mod tests {
                         fcat_layout.field_offset("fldname").unwrap()
                     );
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), FIELD_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), FIELD_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_string("fldname"), "type");
                     assert_eq!(ts.get_i32("type"), SqlType::Integer.into());
                     assert_eq!(ts.get_i32("length") as usize, 0);
@@ -244,7 +245,7 @@ mod tests {
                         fcat_layout.field_offset("type").unwrap()
                     );
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), FIELD_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), FIELD_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_string("fldname"), "length");
                     assert_eq!(ts.get_i32("type"), SqlType::Integer.into());
                     assert_eq!(ts.get_i32("length") as usize, 0);
@@ -253,7 +254,7 @@ mod tests {
                         fcat_layout.field_offset("length").unwrap()
                     );
                     assert_eq!(ts.next(), true);
-                    assert_eq!(ts.get_string("tblname"), FIELD_CATALOG_TABLE_NAME);
+                    assert_eq!(ts.get_string(TABLE_NAME_FIELD), FIELD_CATALOG_TABLE_NAME);
                     assert_eq!(ts.get_string("fldname"), "offset");
                     assert_eq!(ts.get_i32("type"), SqlType::Integer.into());
                     assert_eq!(ts.get_i32("length") as usize, 0);

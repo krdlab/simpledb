@@ -13,11 +13,11 @@ use std::fmt::Display;
 #[derive(Debug, PartialEq, Eq)]
 pub struct RID {
     blknum: i64,
-    slot: i32,
+    slot: Option<i32>,
 }
 
 impl RID {
-    pub fn new(blknum: i64, slot: i32) -> Self {
+    pub fn new(blknum: i64, slot: Option<i32>) -> Self {
         RID { blknum, slot }
     }
 
@@ -25,14 +25,14 @@ impl RID {
         self.blknum
     }
 
-    pub fn slot(&self) -> i32 {
+    pub fn slot(&self) -> Option<i32> {
         self.slot
     }
 }
 
 impl Display for RID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}, {}]", self.blknum, self.slot)
+        write!(f, "[{}, {:?}]", self.blknum, self.slot)
     }
 }
 
@@ -176,6 +176,21 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     pub fn delete(&mut self) {
         let slot = self.current_slot.as_ref().unwrap();
         self.rp.delete(self.tx, *slot).unwrap();
+    }
+
+    pub fn move_to_rid(&mut self, rid: RID) {
+        self.close();
+        let block = BlockId::new(&self.filename, rid.block_number());
+        self.tx.pin(&block).unwrap(); // TODO
+        self.rp = RecordPage::new(block, self.layout);
+        self.current_slot = rid.slot();
+    }
+
+    pub fn current_rid(&self) -> RID {
+        RID {
+            blknum: self.rp.block().number(),
+            slot: self.current_slot,
+        }
     }
 }
 
