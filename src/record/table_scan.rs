@@ -144,12 +144,12 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
 
     pub fn set_i32(&mut self, fname: &str, val: i32) {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.set_i32(self.tx, *slot, fname, val);
+        self.rp.set_i32(self.tx, *slot, fname, val).unwrap(); // TODO
     }
 
     pub fn set_string(&mut self, fname: &str, val: String) {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.set_string(self.tx, *slot, fname, val);
+        self.rp.set_string(self.tx, *slot, fname, val).unwrap(); // TODO
     }
 
     pub fn set_val(&mut self, fname: &str, val: Constant) {
