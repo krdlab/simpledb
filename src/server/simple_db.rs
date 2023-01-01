@@ -24,7 +24,7 @@ pub struct SimpleDB<'lm, 'bm> {
 }
 
 impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
-    const BLOCK_SIZE: usize = 400;
+    const BLOCK_SIZE: usize = 4096;
     const LOG_FILE: &str = "simpledb.log";
     const BUFFER_SIZE: usize = 8;
 

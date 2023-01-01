@@ -13,12 +13,12 @@ use crate::{
     tx::transaction::Transaction,
 };
 
-struct TableMgr {
+pub struct TableMgr {
     tcat_layout: Layout,
     fcat_layout: Layout,
 }
 
-const MAX_NAME_LENGTH: usize = 16;
+pub const MAX_NAME_LENGTH: usize = 16;
 const TABLE_CATALOG_TABLE_NAME: &str = "tblcat";
 const FIELD_CATALOG_TABLE_NAME: &str = "fldcat";
 

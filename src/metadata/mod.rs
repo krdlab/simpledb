@@ -4,3 +4,4 @@
 // https://opensource.org/licenses/MIT
 
 pub mod table_mgr;
+pub mod view_mgr;
