@@ -69,7 +69,8 @@ mod tests {
     }
     impl Context<'_, '_> {
         pub fn new(path: &Path) -> Self {
-            let db = SimpleDB::new_for_test(path, "test_concurrency_mgr.log");
+            let mut db = SimpleDB::new_for_test(path, "test_concurrency_mgr.log");
+            db.init();
             Context { db }
         }
     }
@@ -79,7 +80,7 @@ mod tests {
     #[test]
     fn test_concurrency_mgr() {
         let dir = tempdir().unwrap();
-        let ctx = Arc::new(Context::new(dir.path()));
+        let ctx = Arc::new(Context::new(dir.path().join("testdb").as_path()));
         {
             let ctx1 = ctx.clone();
             let th1 = thread::spawn(move || {

@@ -8,15 +8,16 @@ use crate::{
     record::{schema::Schema, table_scan::TableScan},
     tx::transaction::Transaction,
 };
+use std::sync::Arc;
 
-pub struct ViewMgr<'tm> {
-    tm: &'tm TableMgr,
+pub struct ViewMgr {
+    tm: Arc<TableMgr>,
 }
 
 const MAX_VIEW_DEF: usize = 100; // CAVEAT: The DB BLOCK_SIZE must be sufficiently larger than four times this value.
 
-impl<'tm> ViewMgr<'tm> {
-    pub fn new(tm: &'tm TableMgr) -> Self {
+impl ViewMgr {
+    pub fn new(tm: Arc<TableMgr>) -> Self {
         Self { tm }
     }
 
@@ -51,6 +52,7 @@ impl<'tm> ViewMgr<'tm> {
 mod tests {
     use super::ViewMgr;
     use crate::{metadata::table_mgr::TableMgr, server::simple_db::SimpleDB};
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     #[test]
@@ -60,9 +62,9 @@ mod tests {
             let db = SimpleDB::new_for_test(dir.path(), "view_mgr_test.log");
             let mut tx = db.new_tx();
             {
-                let tm = TableMgr::new();
+                let tm = Arc::new(TableMgr::new());
                 tm.init(&mut tx);
-                let vm = ViewMgr::new(&tm);
+                let vm = ViewMgr::new(tm.clone());
                 vm.init(&mut tx);
 
                 vm.create_view("FirstView", "SELECT * FROM t", &mut tx);

@@ -10,7 +10,7 @@ use crate::{
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,21 +35,21 @@ impl StatInfo {
         self.num_records
     }
 
-    pub fn distinct_values(&self) -> usize {
+    pub fn distinct_values(&self, _field_name: &str) -> usize {
         1 + self.num_records / 3 // NOTE: this is widely inaccurate
     }
 }
 
-pub struct StatMgrData<'tm> {
-    tm: &'tm TableMgr,
+pub struct StatMgrData {
+    tm: Arc<TableMgr>,
     table_stats: HashMap<String, StatInfo>,
     num_calls: usize,
 }
-pub struct StatMgr<'tm> {
-    data: Mutex<StatMgrData<'tm>>,
+pub struct StatMgr {
+    data: Mutex<StatMgrData>,
 }
 
-impl<'tm> StatMgrData<'tm> {
+impl StatMgrData {
     pub(crate) fn refresh_statistics(&mut self, tx: &mut Transaction) {
         self.table_stats.clear();
         self.num_calls = 0;
@@ -110,8 +110,8 @@ impl<'tm> StatMgrData<'tm> {
 
 const STATS_REFRESH_THRESHOLD: usize = 100;
 
-impl<'tm> StatMgr<'tm> {
-    pub fn new(tm: &'tm TableMgr) -> Self {
+impl StatMgr {
+    pub fn new(tm: Arc<TableMgr>) -> Self {
         Self {
             data: Mutex::new(StatMgrData {
                 tm,
@@ -139,23 +139,23 @@ impl<'tm> StatMgr<'tm> {
             data.refresh_statistics(tx);
         }
 
+        // FIXME: If TableMgr has the specified table records, StatMgr should create a StatInfo. If not, should not create it.
         data.get_or_create_table_stat_info(table_name, layout, tx)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use tempfile::tempdir;
-
+    use super::StatMgr;
     use crate::{
         metadata::{
             stat_mgr::STATS_REFRESH_THRESHOLD,
-            table_mgr::{TableMgr, TABLE_CATALOG_TABLE_NAME},
+            table_mgr::{TableMgr, TABLE_CATALOG_TABLE_NAME, TABLE_NAME_FIELD},
         },
         server::simple_db::SimpleDB,
     };
-
-    use super::StatMgr;
+    use std::sync::Arc;
+    use tempfile::tempdir;
 
     #[test]
     fn test() {
@@ -164,16 +164,16 @@ mod tests {
             let db = SimpleDB::new_for_test(dir.path(), "stat_mgr_test.log");
             let mut tx = db.new_tx();
             {
-                let tm = TableMgr::new();
+                let tm = Arc::new(TableMgr::new());
                 tm.init(&mut tx);
-                let sm = StatMgr::new(&tm);
+                let sm = StatMgr::new(tm.clone());
                 sm.init(&mut tx);
 
                 let layout = tm.layout(TABLE_CATALOG_TABLE_NAME, &mut tx).unwrap();
                 let stats1 = sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, &layout, &mut tx);
                 assert_eq!(stats1.blocks_accessed(), 1);
                 assert_eq!(stats1.records_output(), 2);
-                assert_eq!(stats1.distinct_values(), 1);
+                assert_eq!(stats1.distinct_values(TABLE_NAME_FIELD), 1);
 
                 for _ in 0..(STATS_REFRESH_THRESHOLD + 1) {
                     let _ = sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, &layout, &mut tx);

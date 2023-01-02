@@ -14,7 +14,7 @@ use crate::{
     },
     tx::transaction::Transaction,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 /* FIXME: begin draft implementations */
 pub trait Index {}
@@ -93,33 +93,28 @@ impl IndexInfo {
     }
 
     pub fn records_output(&self) -> usize {
-        self.stat_info.records_output() / self.stat_info.distinct_values()
+        self.stat_info.records_output() / self.stat_info.distinct_values(&self.field_name)
     }
 
     pub fn distinct_values(&self, fname: &str) -> usize {
         if self.field_name == fname {
             1
         } else {
-            self.stat_info.distinct_values()
+            self.stat_info.distinct_values(&self.field_name)
         }
     }
 }
 
 const INDEX_CATALOG_TABLE_NAME: &str = "idxcat";
 
-pub struct IndexMgr<'tm, 'sm> {
+pub struct IndexMgr {
     layout: Layout,
-    tm: &'tm TableMgr,
-    sm: &'sm StatMgr<'tm>,
+    tm: Arc<TableMgr>,
+    sm: Arc<StatMgr>,
 }
 
-impl<'tm, 'sm> IndexMgr<'tm, 'sm> {
-    pub fn new(
-        is_new: bool,
-        tm: &'tm TableMgr,
-        sm: &'sm StatMgr<'tm>,
-        tx: &mut Transaction,
-    ) -> Self {
+impl IndexMgr {
+    pub fn new(is_new: bool, tm: Arc<TableMgr>, sm: Arc<StatMgr>, tx: &mut Transaction) -> Self {
         if is_new {
             let mut schema = Schema::new();
             schema.add_string_field("indexname", MAX_NAME_LENGTH);
@@ -191,6 +186,7 @@ mod tests {
         record::schema::Schema,
         server::simple_db::SimpleDB,
     };
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     #[test]
@@ -200,18 +196,17 @@ mod tests {
             let db = SimpleDB::new_for_test(dir.path(), "index_mgr_test.log");
             let mut tx = db.new_tx();
             {
-                let tm = TableMgr::new();
+                let tm = Arc::new(TableMgr::new());
                 tm.init(&mut tx);
-                let sm = StatMgr::new(&tm);
+                let sm = Arc::new(StatMgr::new(tm.clone()));
                 sm.init(&mut tx);
-
                 {
                     let mut schema = Schema::new();
                     schema.add_i32_field("id");
                     tm.create_table("MyTable", schema, &mut tx);
                 }
 
-                let im = IndexMgr::new(true, &tm, &sm, &mut tx);
+                let im = IndexMgr::new(true, tm.clone(), sm.clone(), &mut tx);
                 im.create_index("my-index", "MyTable", "id", &mut tx);
 
                 let ii_map = im.index_info("MyTable", &mut tx);
