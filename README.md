@@ -11,7 +11,7 @@
 - [x] Memory Management
 - [x] Transaction Management
 - [x] Record Management
-- [ ] Metadata Management
+- [x] Metadata Management
 - [ ] Query Processing
 - [ ] Parsing
 - [ ] Planning
