@@ -13,11 +13,11 @@ use std::fmt::Display;
 #[derive(Debug, PartialEq, Eq)]
 pub struct RID {
     blknum: i64,
-    slot: i32,
+    slot: Option<i32>,
 }
 
 impl RID {
-    pub fn new(blknum: i64, slot: i32) -> Self {
+    pub fn new(blknum: i64, slot: Option<i32>) -> Self {
         RID { blknum, slot }
     }
 
@@ -25,14 +25,14 @@ impl RID {
         self.blknum
     }
 
-    pub fn slot(&self) -> i32 {
+    pub fn slot(&self) -> Option<i32> {
         self.slot
     }
 }
 
 impl Display for RID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}, {}]", self.blknum, self.slot)
+        write!(f, "[{}, {:?}]", self.blknum, self.slot)
     }
 }
 
@@ -79,8 +79,8 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         }
     }
 
-    pub fn close(&mut self) {
-        self.tx.unpin(self.rp.get_block());
+    fn close(&mut self) {
+        self.tx.unpin(self.rp.block());
     }
 
     fn move_to_block(&mut self, blknum: i64) {
@@ -105,7 +105,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     fn as_last_block(&mut self) -> bool {
-        self.rp.get_block().number() as u64 == self.tx.size(&self.filename).unwrap() - 1
+        self.rp.block().number() as u64 == self.tx.size(&self.filename).unwrap() - 1
     }
 
     pub fn next(&mut self) -> bool {
@@ -114,7 +114,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
             if self.as_last_block() {
                 return false;
             }
-            self.move_to_block(self.rp.get_block().number() + 1);
+            self.move_to_block(self.rp.block().number() + 1);
             self.current_slot = self.rp.next_after(self.tx, self.current_slot);
         }
         true
@@ -131,7 +131,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn get_val(&mut self, fname: &str) -> Constant {
-        if self.layout.get_schema().get_type(fname).unwrap() == SqlType::Integer {
+        if self.layout.schema().field_type(fname).unwrap() == SqlType::Integer {
             return Constant::Int(self.get_i32(fname));
         } else {
             return Constant::String(self.get_string(fname));
@@ -139,21 +139,21 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn has_field(&self, fname: &str) -> bool {
-        self.layout.get_schema().has_field(fname)
+        self.layout.schema().has_field(fname)
     }
 
     pub fn set_i32(&mut self, fname: &str, val: i32) {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.set_i32(self.tx, *slot, fname, val);
+        self.rp.set_i32(self.tx, *slot, fname, val).unwrap(); // TODO
     }
 
     pub fn set_string(&mut self, fname: &str, val: String) {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.set_string(self.tx, *slot, fname, val);
+        self.rp.set_string(self.tx, *slot, fname, val).unwrap(); // TODO
     }
 
     pub fn set_val(&mut self, fname: &str, val: Constant) {
-        let ftype = self.layout.get_schema().get_type(fname);
+        let ftype = self.layout.schema().field_type(fname);
         match val {
             Constant::Int(v) if ftype == Some(SqlType::Integer) => self.set_i32(fname, v),
             Constant::String(v) if ftype == Some(SqlType::VarChar) => self.set_string(fname, v),
@@ -167,7 +167,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
             if self.as_last_block() {
                 self.move_to_new_block();
             } else {
-                self.move_to_block(self.rp.get_block().number() + 1);
+                self.move_to_block(self.rp.block().number() + 1);
             }
             self.current_slot = self.rp.insert_after(self.tx, self.current_slot);
         }
@@ -176,6 +176,27 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     pub fn delete(&mut self) {
         let slot = self.current_slot.as_ref().unwrap();
         self.rp.delete(self.tx, *slot).unwrap();
+    }
+
+    pub fn move_to_rid(&mut self, rid: RID) {
+        self.close();
+        let block = BlockId::new(&self.filename, rid.block_number());
+        self.tx.pin(&block).unwrap(); // TODO
+        self.rp = RecordPage::new(block, self.layout);
+        self.current_slot = rid.slot();
+    }
+
+    pub fn current_rid(&self) -> RID {
+        RID {
+            blknum: self.rp.block().number(),
+            slot: self.current_slot,
+        }
+    }
+}
+
+impl<'tx, 'lm, 'bm, 'lt, 'ly> Drop for TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -231,9 +252,9 @@ mod tests {
                     assert_eq!(ts.get_string("B"), format!("rec{i}"));
                     i += 2;
                 }
-                ts.close();
             }
             tx.commit().unwrap();
         }
+        dir.close().unwrap();
     }
 }

@@ -190,7 +190,10 @@ mod tests {
     #[test]
     fn test_write_and_read() {
         let dir = tempdir().unwrap();
-        let db = SimpleDB::new_for_test(dir.path(), "test_file_mgr.log");
+        let mut db =
+            SimpleDB::new_for_test(dir.path().join("testdb").as_path(), "test_file_mgr.log");
+        db.init();
+
         let fm = db.file_mgr();
         {
             let block = BlockId::new("test_file_mgr_file", 2);
@@ -219,7 +222,10 @@ mod tests {
     #[test]
     fn test_multi_write_and_read() {
         let dir = tempdir().unwrap();
-        let db = SimpleDB::new_for_test(dir.path(), "test_file_mgr.log");
+        let mut db =
+            SimpleDB::new_for_test(dir.path().join("testdb").as_path(), "test_file_mgr.log");
+        db.init();
+
         let fm = db.file_mgr();
         {
             let mut p0 = Page::for_data(fm.blocksize());

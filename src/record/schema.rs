@@ -3,9 +3,9 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use std::{collections::HashMap, convert::Into};
-
 use crate::{constants::I32_BYTE_SIZE, file::page::Page};
+use std::{collections::HashMap, convert::Into};
+use thiserror::Error;
 
 // NOTE: java.sql.Types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,11 +20,31 @@ impl Into<i32> for SqlType {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum SqlTypeError {
+    #[error("unknown SQL type: {0}")]
+    UnknownNumber(i32),
+}
+
+impl TryFrom<i32> for SqlType {
+    type Error = SqlTypeError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            4 => Ok(SqlType::Integer),
+            12 => Ok(SqlType::VarChar),
+            _ => Err(SqlTypeError::UnknownNumber(value)),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct FieldInfo {
     ftype: SqlType,
     flength: usize,
 }
 
+#[derive(Clone)]
 pub struct Schema {
     fields: Vec<String>,
     info: HashMap<String, FieldInfo>,
@@ -46,11 +66,11 @@ impl Schema {
         self.fields.contains(&fname.into())
     }
 
-    pub fn get_type(&self, fname: &str) -> Option<SqlType> {
+    pub fn field_type(&self, fname: &str) -> Option<SqlType> {
         self.info.get(fname).and_then(|fi| Some(fi.ftype))
     }
 
-    fn get_length(&self, fname: &str) -> Option<usize> {
+    pub fn field_length(&self, fname: &str) -> Option<usize> {
         self.info
             .get(fname)
             .and_then(|fi| Some(fi.flength.try_into().unwrap()))
@@ -70,8 +90,8 @@ impl Schema {
     }
 
     pub fn add_field_from(&mut self, fname: &str, schema: &Schema) {
-        let ft = schema.get_type(fname).unwrap(); // TODO
-        let fl = schema.get_length(fname).unwrap(); // TODO
+        let ft = schema.field_type(fname).unwrap(); // TODO
+        let fl = schema.field_length(fname).unwrap(); // TODO
         self.add_field(fname, ft, fl);
     }
 
@@ -113,24 +133,24 @@ impl Layout {
         }
     }
 
-    pub fn get_schema(&self) -> &Schema {
+    pub fn schema(&self) -> &Schema {
         &self.schema
     }
 
-    pub fn get_offset(&self, fname: &str) -> Option<&usize> {
-        self.offsets.get(fname)
+    pub fn field_offset(&self, fname: &str) -> Option<usize> {
+        self.offsets.get(fname).map(|o| *o)
     }
 
-    pub fn get_slotsize(&self) -> usize {
+    pub fn slotsize(&self) -> usize {
         self.slotsize
     }
 
     fn length_in_bytes(schema: &Schema, fname: &str) -> Option<usize> {
-        if let Some(ftype) = schema.get_type(fname) {
+        if let Some(ftype) = schema.field_type(fname) {
             if ftype == SqlType::Integer {
                 Some(I32_BYTE_SIZE as usize)
             } else {
-                Some(Page::max_length(schema.get_length(fname).unwrap()))
+                Some(Page::max_length(schema.field_length(fname).unwrap()))
             }
         } else {
             None
@@ -149,8 +169,8 @@ mod tests {
         schema.add_string_field("B", 9);
 
         let layout = Layout::new(schema);
-        assert_eq!(layout.get_offset("A"), Some(&4)); // NOTE: 0 to 3 is a flag area
-        assert_eq!(layout.get_offset("B"), Some(&8));
-        assert_eq!(layout.get_slotsize(), 48); // NOTE: 4 + 4 + 4 (area of string bytes length) + (9 (field length) * 4 (bytes/char))
+        assert_eq!(layout.field_offset("A"), Some(4)); // NOTE: 0 to 3 is a flag area
+        assert_eq!(layout.field_offset("B"), Some(8));
+        assert_eq!(layout.slotsize(), 48); // NOTE: 4 + 4 + 4 (area of string bytes length) + (9 (field length) * 4 (bytes/char))
     }
 }

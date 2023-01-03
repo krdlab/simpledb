@@ -9,6 +9,7 @@ use crate::{
     buffer_mgr::BufferMgr,
     file::file_mgr::FileMgr,
     log_mgr::LogMgr,
+    metadata::metadata_mgr::MetadataMgr,
     tx::{
         lock_table::LockTable,
         transaction::{Transaction, TxNumber},
@@ -21,10 +22,11 @@ pub struct SimpleDB<'lm, 'bm> {
     bm: Arc<BufferMgr<'bm, 'lm>>,
     tn: TxNumber,
     lt: LockTable,
+    mm: Option<MetadataMgr>,
 }
 
 impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
-    const BLOCK_SIZE: usize = 400;
+    const BLOCK_SIZE: usize = 4096;
     const LOG_FILE: &str = "simpledb.log";
     const BUFFER_SIZE: usize = 8;
 
@@ -34,7 +36,14 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         let bm = Arc::new(BufferMgr::new(fm.clone(), lm.clone(), buffersize));
         let tn = TxNumber::new();
         let lt = LockTable::new();
-        Self { fm, lm, bm, tn, lt }
+        Self {
+            fm,
+            lm,
+            bm,
+            tn,
+            lt,
+            mm: None,
+        }
     }
 
     pub fn new_for_test(db_dir_path: &Path, logfile: &str) -> Self {
@@ -47,7 +56,24 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         ));
         let tn = TxNumber::new();
         let lt = LockTable::new();
-        Self { fm, lm, bm, tn, lt }
+        Self {
+            fm,
+            lm,
+            bm,
+            tn,
+            lt,
+            mm: None,
+        }
+    }
+
+    pub fn init(&mut self) {
+        let is_new = self.fm.is_new();
+
+        let mut tx = self.new_tx();
+        let mm = MetadataMgr::new(is_new, &mut tx);
+        tx.commit().unwrap();
+
+        self.mm = Some(mm);
     }
 
     pub fn new_tx<'lt, 's: 'lt>(&'s self) -> Transaction<'lm, 'bm, 'lt> {
@@ -70,5 +96,9 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
 
     pub fn buffer_mgr(&self) -> Arc<BufferMgr<'bm, 'lm>> {
         self.bm.clone()
+    }
+
+    pub fn metadata_mgr(&self) -> &MetadataMgr {
+        self.mm.as_ref().unwrap()
     }
 }

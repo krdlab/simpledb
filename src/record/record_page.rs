@@ -13,8 +13,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum RecordPageError {
-    #[error("invalid slot: {0:?}")]
-    InvalidSlot(Option<i32>),
+    #[error("illegal slot: {0:?}")]
+    IllegalSlot(i32),
+
+    #[error("field not found: {0}")]
+    FieldNotFound(String),
 
     #[error("{0:?}")]
     Transaction(#[from] TransactionError),
@@ -45,17 +48,31 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         Self { block, layout }
     }
 
-    fn get_offset(&self, slot: i32) -> usize {
-        assert!(slot >= 0);
-        (slot as usize) * self.layout.get_slotsize()
+    fn slot_offset(&self, slot: i32) -> Result<usize> {
+        // assert!(slot >= 0);
+        if slot >= 0 {
+            Ok((slot as usize) * self.layout.slotsize())
+        } else {
+            Err(RecordPageError::IllegalSlot(slot))
+        }
     }
 
     fn is_valid_slot(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> bool {
-        self.get_offset(slot + 1) <= tx.block_size()
+        self.slot_offset(slot + 1)
+            .map_or(false, |o| o <= tx.block_size())
     }
 
-    pub fn get_block(&self) -> &BlockId {
+    pub fn block(&self) -> &BlockId {
         &self.block
+    }
+
+    fn field_offset(&self, slot: i32, fname: &str) -> Result<usize> {
+        let fpos = self.slot_offset(slot)?
+            + self
+                .layout
+                .field_offset(fname)
+                .ok_or(RecordPageError::FieldNotFound(fname.into()))?;
+        Ok(fpos)
     }
 
     pub fn get_i32(
@@ -64,8 +81,8 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         fname: &str,
     ) -> Result<i32> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        Ok(tx.get_i32(&self.block, fpos)?)
+        let foffset = self.field_offset(slot, fname)?;
+        Ok(tx.get_i32(&self.block, foffset)?)
     }
 
     pub fn set_i32(
@@ -75,8 +92,8 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         fname: &str,
         value: i32,
     ) -> Result<()> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        Ok(tx.set_i32(&self.block, fpos, value, true)?)
+        let foffset = self.field_offset(slot, fname)?;
+        Ok(tx.set_i32(&self.block, foffset, value, true)?)
     }
 
     pub fn get_string(
@@ -85,8 +102,8 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         fname: &str,
     ) -> Result<String> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        Ok(tx.get_string(&self.block, fpos)?)
+        let foffset = self.field_offset(slot, fname)?;
+        Ok(tx.get_string(&self.block, foffset)?)
     }
 
     pub fn set_string(
@@ -96,8 +113,8 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         fname: &str,
         value: String,
     ) -> Result<()> {
-        let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-        Ok(tx.set_string(&self.block, fpos, &value, true)?)
+        let foffset = self.field_offset(slot, fname)?;
+        Ok(tx.set_string(&self.block, foffset, &value, true)?)
     }
 
     pub fn delete(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> Result<()> {
@@ -109,18 +126,18 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         while self.is_valid_slot(tx, slot) {
             tx.set_i32(
                 &self.block,
-                self.get_offset(slot),
+                self.slot_offset(slot)?,
                 SlotFlag::Empty.into(),
                 false,
             )?;
-            let schema = self.layout.get_schema();
+            let schema = self.layout.schema();
             for fname in schema.fields_iter() {
-                let fpos = self.get_offset(slot) + self.layout.get_offset(fname).unwrap();
-                let ftype = schema.get_type(fname).unwrap();
+                let foffset = self.field_offset(slot, fname)?;
+                let ftype = schema.field_type(fname).unwrap();
                 if ftype == SqlType::Integer {
-                    tx.set_i32(&self.block, fpos, 0, false)?;
+                    tx.set_i32(&self.block, foffset, 0, false)?;
                 } else {
-                    tx.set_string(&self.block, fpos, "", false)?;
+                    tx.set_string(&self.block, foffset, "", false)?;
                 }
             }
             slot += 1;
@@ -155,7 +172,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         slot: i32,
         flag: SlotFlag,
     ) -> Result<()> {
-        Ok(tx.set_i32(&self.block, self.get_offset(slot), flag.into(), true)?)
+        Ok(tx.set_i32(&self.block, self.slot_offset(slot)?, flag.into(), true)?)
     }
 
     fn search_after(
@@ -167,7 +184,11 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         let mut next = slot.map(|s| s + 1).unwrap_or(0);
         let flag_i32: i32 = flag.into();
         while self.is_valid_slot(tx, next) {
-            if tx.get_i32(&self.block, self.get_offset(next)).unwrap() == flag_i32 {
+            if tx
+                .get_i32(&self.block, self.slot_offset(next).unwrap())
+                .unwrap()
+                == flag_i32
+            {
                 return Some(next);
             }
             next += 1;
@@ -226,7 +247,7 @@ mod tests {
                     prev_slot = Some(slot);
                 }
 
-                let slot_num = db.file_mgr().blocksize() / layout.get_slotsize();
+                let slot_num = db.file_mgr().blocksize() / layout.slotsize();
                 let target_slot = (slot_num / 2) as i32;
                 rp.delete(&mut tx, target_slot).unwrap();
 
