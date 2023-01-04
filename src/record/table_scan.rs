@@ -187,10 +187,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     }
 
     pub fn current_rid(&self) -> RID {
-        RID {
-            blknum: self.rp.block().number(),
-            slot: self.current_slot,
-        }
+        RID::new(self.rp.block().number(), self.current_slot)
     }
 }
 
