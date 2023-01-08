@@ -8,6 +8,7 @@ mod constants;
 mod file;
 mod log_mgr;
 mod metadata;
+mod query;
 mod record;
 pub mod server;
 mod tx;

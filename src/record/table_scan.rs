@@ -7,34 +7,7 @@ use super::{
     record_page::RecordPage,
     schema::{Layout, SqlType},
 };
-use crate::{file::block_id::BlockId, tx::transaction::Transaction};
-use std::fmt::Display;
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct RID {
-    blknum: i64,
-    slot: Option<i32>,
-}
-
-impl RID {
-    pub fn new(blknum: i64, slot: Option<i32>) -> Self {
-        RID { blknum, slot }
-    }
-
-    pub fn block_number(&self) -> i64 {
-        self.blknum
-    }
-
-    pub fn slot(&self) -> Option<i32> {
-        self.slot
-    }
-}
-
-impl Display for RID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}, {:?}]", self.blknum, self.slot)
-    }
-}
+use crate::{file::block_id::BlockId, query::scan::{Constant, RID}, tx::transaction::Transaction};
 
 pub struct TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
@@ -44,12 +17,6 @@ pub struct TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     current_slot: Option<i32>,
 }
 // TODO: impl UpdateScan for TableScan
-
-#[derive(Debug)]
-pub enum Constant {
-    Int(i32),
-    String(String),
-}
 
 impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     pub fn new(
