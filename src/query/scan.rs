@@ -8,9 +8,33 @@ use std::fmt::Display;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum ScanError {}
+pub enum ScanError {
+    #[error("field not found: {0}")]
+    FieldNotFound(String),
+}
 
 pub type Result<T> = core::result::Result<T, ScanError>;
+
+pub trait Scan {
+    fn before_first(&mut self);
+    fn next(&mut self) -> bool;
+    fn get_i32(&self, field_name: &str) -> Result<i32>;
+    fn get_string(&self, field_name: &str) -> Result<String>;
+    fn get_val(&self, field_name: &str) -> Result<Constant>;
+    fn has_field(&self, field_name: &str) -> bool;
+    fn close(&self);
+}
+
+pub trait UpdateScan: Scan {
+    fn set_val(&mut self, field_name: &str, value: Constant) -> Result<()>;
+    fn set_i32(&mut self, field_name: &str, value: i32) -> Result<()>;
+    fn set_string(&mut self, field_name: &str, value: String) -> Result<()>;
+    fn insert(&mut self) -> Result<()>;
+    fn delete(&mut self) -> Result<()>;
+
+    fn get_rid(&self) -> RID;
+    fn move_to_rid(&mut self, rid: RID);
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RID {
@@ -42,25 +66,4 @@ impl Display for RID {
 pub enum Constant {
     Int(i32),
     String(String),
-}
-
-pub trait Scan {
-    fn before_first(&mut self);
-    fn next(&mut self) -> bool;
-    fn get_i32(&self, field_name: &str) -> Result<i32>;
-    fn get_string(&self, field_name: &str) -> Result<String>;
-    fn get_val(&self, field_name: &str) -> Result<Constant>;
-    fn has_field(&self, field_name: &str) -> bool;
-    fn close(&self);
-}
-
-pub trait UpdateScan: Scan {
-    fn set_val(&mut self, field_name: &str, value: Constant) -> Result<()>;
-    fn set_i32(&mut self, field_name: &str, value: i32) -> Result<()>;
-    fn set_string(&mut self, field_name: &str, value: String) -> Result<()>;
-    fn insert(&mut self) -> Result<()>;
-    fn delete(&mut self) -> Result<()>;
-
-    fn get_rid(&self) -> RID;
-    fn move_to_rid(&mut self, rid: RID);
 }
