@@ -3,8 +3,8 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use super::predicate::Constant;
 use std::fmt::Display;
-
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -60,10 +60,4 @@ impl Display for RID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}, {:?}]", self.blknum, self.slot)
     }
-}
-
-#[derive(Debug)]
-pub enum Constant {
-    Int(i32),
-    String(String),
 }

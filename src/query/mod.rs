@@ -4,4 +4,5 @@
 // https://opensource.org/licenses/MIT
 
 pub mod operators;
+pub mod predicate;
 pub mod scan;

@@ -3,15 +3,10 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use super::scan::{Scan, ScanError, UpdateScan};
-
-// TODO: implement Predicate
-pub struct Predicate {}
-impl Predicate {
-    pub fn is_satisfied<S: Scan>(&self, scan: &S) -> bool {
-        false // TODO
-    }
-}
+use super::{
+    predicate::{Constant, Predicate},
+    scan::{Scan, ScanError, UpdateScan},
+};
 
 // select operator
 
@@ -57,7 +52,7 @@ where
         self.scan.get_string(field_name)
     }
 
-    fn get_val(&self, field_name: &str) -> super::scan::Result<super::scan::Constant> {
+    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
         self.scan.get_val(field_name)
     }
 
@@ -74,11 +69,7 @@ impl<S> UpdateScan for SelectScan<S>
 where
     S: UpdateScan,
 {
-    fn set_val(
-        &mut self,
-        field_name: &str,
-        value: super::scan::Constant,
-    ) -> super::scan::Result<()> {
+    fn set_val(&mut self, field_name: &str, value: Constant) -> super::scan::Result<()> {
         self.scan.set_val(field_name, value)
     }
 
@@ -154,7 +145,7 @@ where
         }
     }
 
-    fn get_val(&self, field_name: &str) -> super::scan::Result<super::scan::Constant> {
+    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
         if self.has_field(field_name) {
             self.scan.get_val(field_name)
         } else {
@@ -227,7 +218,7 @@ where
         }
     }
 
-    fn get_val(&self, field_name: &str) -> super::scan::Result<super::scan::Constant> {
+    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_val(field_name)
         } else {

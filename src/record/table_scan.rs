@@ -7,7 +7,11 @@ use super::{
     record_page::RecordPage,
     schema::{Layout, SqlType},
 };
-use crate::{file::block_id::BlockId, query::scan::{Constant, RID}, tx::transaction::Transaction};
+use crate::{
+    file::block_id::BlockId,
+    query::{predicate::Constant, scan::RID},
+    tx::transaction::Transaction,
+};
 
 pub struct TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
     tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
