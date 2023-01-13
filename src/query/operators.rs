@@ -10,18 +10,12 @@ use super::{
 
 // select operator
 
-pub struct SelectScan<S>
-where
-    S: UpdateScan,
-{
+pub struct SelectScan<S> {
     scan: S,
     pred: Predicate,
 }
 
-impl<S> SelectScan<S>
-where
-    S: UpdateScan,
-{
+impl<S> SelectScan<S> {
     pub fn new(scan: S, pred: Predicate) -> Self {
         Self { scan, pred }
     }
@@ -29,7 +23,7 @@ where
 
 impl<S> Scan for SelectScan<S>
 where
-    S: UpdateScan,
+    S: Scan,
 {
     fn before_first(&mut self) {
         self.scan.before_first();
@@ -93,25 +87,19 @@ where
         self.scan.get_rid()
     }
 
-    fn move_to_rid(&mut self, rid: super::scan::RID) {
+    fn move_to_rid(&mut self, rid: super::scan::RID) -> super::scan::Result<()> {
         self.scan.move_to_rid(rid)
     }
 }
 
 // project operator
 
-pub struct ProjectScan<S>
-where
-    S: Scan,
-{
+pub struct ProjectScan<S> {
     scan: S,
     fields: Vec<String>,
 }
 
-impl<S> ProjectScan<S>
-where
-    S: Scan,
-{
+impl<S> ProjectScan<S> {
     pub fn new(scan: S, fields: Vec<String>) -> Self {
         Self { scan, fields }
     }
@@ -164,22 +152,14 @@ where
 
 // product operator
 
-pub struct ProductScan<S>
-where
-    S: Scan,
-{
+pub struct ProductScan<S> {
     scan1: S,
     scan2: S,
 }
 
-impl<S> ProductScan<S>
-where
-    S: Scan,
-{
+impl<S> ProductScan<S> {
     pub fn new(scan1: S, scan2: S) -> Self {
-        let mut s = Self { scan1, scan2 };
-        s.before_first();
-        s
+        Self { scan1, scan2 }
     }
 }
 

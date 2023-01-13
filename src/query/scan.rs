@@ -4,6 +4,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::predicate::Constant;
+use crate::record::record_page::RecordPageError;
 use std::fmt::Display;
 use thiserror::Error;
 
@@ -11,6 +12,9 @@ use thiserror::Error;
 pub enum ScanError {
     #[error("field not found: {0}")]
     FieldNotFound(String),
+
+    #[error("{0:?}")]
+    RecordPage(#[from] RecordPageError),
 }
 
 pub type Result<T> = core::result::Result<T, ScanError>;
@@ -33,7 +37,7 @@ pub trait UpdateScan: Scan {
     fn delete(&mut self) -> Result<()>;
 
     fn get_rid(&self) -> RID;
-    fn move_to_rid(&mut self, rid: RID);
+    fn move_to_rid(&mut self, rid: RID) -> Result<()>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
