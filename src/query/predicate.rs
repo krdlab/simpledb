@@ -22,7 +22,7 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn evaluate<S: Scan>(&self, s: &S) -> Constant {
+    pub fn evaluate<S: Scan>(&self, s: &mut S) -> Constant {
         match self {
             Self::Constant(val) => val.clone(),
             Self::FieldName(fname) => s.get_val(fname.as_str()).unwrap(),
@@ -55,7 +55,7 @@ impl Term {
         Self { lhs, rhs }
     }
 
-    pub fn is_satisfied<S: Scan>(&self, s: &S) -> bool {
+    pub fn is_satisfied<S: Scan>(&self, s: &mut S) -> bool {
         let lval = self.lhs.evaluate(s);
         let rval = self.rhs.evaluate(s);
         lval == rval
@@ -133,7 +133,7 @@ impl Predicate {
         self.terms.append(&mut pred.terms);
     }
 
-    pub fn is_satisfied<S: Scan>(&self, scan: &S) -> bool {
+    pub fn is_satisfied<S: Scan>(&self, scan: &mut S) -> bool {
         for t in self.terms.iter() {
             if !t.is_satisfied(scan) {
                 return false;

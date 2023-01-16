@@ -40,8 +40,10 @@ impl ViewMgr {
         let layout = self.tm.layout("viewcat", tx).unwrap(); // TODO
         let mut ts = TableScan::new(tx, "viewcat", &layout);
         while ts.next() {
-            if ts.get_string("viewname") == vname {
-                return Some(ts.get_string("viewdef"));
+            if let Ok(vn) = ts.get_string("viewname") {
+                if vn == vname {
+                    return Some(ts.get_string("viewdef").unwrap());
+                }
             }
         }
         None

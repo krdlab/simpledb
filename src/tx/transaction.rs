@@ -63,7 +63,7 @@ impl TxInner<'_, '_, '_> {
         self.cm.xlock(blk)?;
         let mut buff = self.bl.get_buffer(blk).unwrap().lock().unwrap();
         let lsn = -1;
-        let p = buff.contents();
+        let p = buff.contents_as_mut();
         p.set_i32(offset, val)?;
         buff.set_modified(self.txnum, lsn);
         Ok(())
@@ -78,7 +78,7 @@ impl TxInner<'_, '_, '_> {
         self.cm.xlock(blk)?;
         let mut buff = self.bl.get_buffer(blk).unwrap().lock().unwrap();
         let lsn = -1;
-        let p = buff.contents();
+        let p = buff.contents_as_mut();
         p.set_string(offset, val)?;
         buff.set_modified(self.txnum, lsn);
         Ok(())
@@ -163,15 +163,15 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
 
     pub fn get_i32(&mut self, blk: &BlockId, offset: usize) -> Result<i32> {
         self.inner.cm.slock(blk)?;
-        let mut buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
-        let val = buff.contents().get_i32(offset)?;
+        let buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
+        let val = buff.contents_as_ref().get_i32(offset)?;
         Ok(val)
     }
 
     pub fn get_string(&mut self, blk: &BlockId, offset: usize) -> Result<String> {
         self.inner.cm.slock(blk)?;
         let mut buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
-        let val = buff.contents().get_string(offset)?;
+        let val = buff.contents_as_mut().get_string(offset)?;
         Ok(val)
     }
 
@@ -188,7 +188,7 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         if ok_to_log {
             lsn = self.rm.set_i32(&mut *buff, offset, val).unwrap();
         }
-        let p = buff.contents();
+        let p = buff.contents_as_mut();
         p.set_i32(offset, val)?;
         buff.set_modified(self.inner.txnum, lsn);
         Ok(())
@@ -207,7 +207,7 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         if ok_to_log {
             lsn = self.rm.set_string(&mut *buff, offset, val).unwrap();
         }
-        let p = buff.contents();
+        let p = buff.contents_as_mut();
         p.set_string(offset, val)?;
         buff.set_modified(self.inner.txnum, lsn);
         Ok(())

@@ -31,22 +31,22 @@ where
 
     fn next(&mut self) -> bool {
         while self.scan.next() {
-            if self.pred.is_satisfied(&self.scan) {
+            if self.pred.is_satisfied(&mut self.scan) {
                 return true;
             }
         }
         return false;
     }
 
-    fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
+    fn get_i32(&mut self, field_name: &str) -> super::scan::Result<i32> {
         self.scan.get_i32(field_name)
     }
 
-    fn get_string(&self, field_name: &str) -> super::scan::Result<String> {
+    fn get_string(&mut self, field_name: &str) -> super::scan::Result<String> {
         self.scan.get_string(field_name)
     }
 
-    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
+    fn get_val(&mut self, field_name: &str) -> super::scan::Result<Constant> {
         self.scan.get_val(field_name)
     }
 
@@ -54,7 +54,7 @@ where
         self.scan.has_field(field_name)
     }
 
-    fn close(&self) {
+    fn close(&mut self) {
         self.scan.close();
     }
 }
@@ -117,7 +117,7 @@ where
         self.scan.next()
     }
 
-    fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
+    fn get_i32(&mut self, field_name: &str) -> super::scan::Result<i32> {
         if self.has_field(field_name) {
             self.scan.get_i32(field_name)
         } else {
@@ -125,7 +125,7 @@ where
         }
     }
 
-    fn get_string(&self, field_name: &str) -> super::scan::Result<String> {
+    fn get_string(&mut self, field_name: &str) -> super::scan::Result<String> {
         if self.has_field(field_name) {
             self.scan.get_string(field_name)
         } else {
@@ -133,7 +133,7 @@ where
         }
     }
 
-    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
+    fn get_val(&mut self, field_name: &str) -> super::scan::Result<Constant> {
         if self.has_field(field_name) {
             self.scan.get_val(field_name)
         } else {
@@ -145,7 +145,7 @@ where
         self.fields.contains(&field_name.into())
     }
 
-    fn close(&self) {
+    fn close(&mut self) {
         self.scan.close()
     }
 }
@@ -182,7 +182,7 @@ where
         }
     }
 
-    fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
+    fn get_i32(&mut self, field_name: &str) -> super::scan::Result<i32> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_i32(field_name)
         } else {
@@ -190,7 +190,7 @@ where
         }
     }
 
-    fn get_string(&self, field_name: &str) -> super::scan::Result<String> {
+    fn get_string(&mut self, field_name: &str) -> super::scan::Result<String> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_string(field_name)
         } else {
@@ -198,7 +198,7 @@ where
         }
     }
 
-    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
+    fn get_val(&mut self, field_name: &str) -> super::scan::Result<Constant> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_val(field_name)
         } else {
@@ -210,7 +210,7 @@ where
         self.scan1.has_field(field_name) || self.scan2.has_field(field_name)
     }
 
-    fn close(&self) {
+    fn close(&mut self) {
         self.scan1.close();
         self.scan2.close();
     }

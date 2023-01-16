@@ -4,7 +4,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::predicate::Constant;
-use crate::record::record_page::RecordPageError;
+use crate::{record::record_page::RecordPageError, tx::transaction::TransactionError};
 use std::fmt::Display;
 use thiserror::Error;
 
@@ -12,6 +12,9 @@ use thiserror::Error;
 pub enum ScanError {
     #[error("field not found: {0}")]
     FieldNotFound(String),
+
+    #[error("{0:?}")]
+    Transaction(#[from] TransactionError),
 
     #[error("{0:?}")]
     RecordPage(#[from] RecordPageError),
@@ -22,11 +25,11 @@ pub type Result<T> = core::result::Result<T, ScanError>;
 pub trait Scan {
     fn before_first(&mut self);
     fn next(&mut self) -> bool;
-    fn get_i32(&self, field_name: &str) -> Result<i32>;
-    fn get_string(&self, field_name: &str) -> Result<String>;
-    fn get_val(&self, field_name: &str) -> Result<Constant>;
+    fn get_i32(&mut self, field_name: &str) -> Result<i32>;
+    fn get_string(&mut self, field_name: &str) -> Result<String>;
+    fn get_val(&mut self, field_name: &str) -> Result<Constant>;
     fn has_field(&self, field_name: &str) -> bool;
-    fn close(&self);
+    fn close(&mut self);
 }
 
 pub trait UpdateScan: Scan {

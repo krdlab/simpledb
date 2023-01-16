@@ -59,7 +59,11 @@ impl<'b, 'lm> Buffer<'b, 'lm> {
         }
     }
 
-    pub fn contents(&mut self) -> &mut Page<'b> {
+    pub fn contents_as_ref(&self) -> &Page<'b> {
+        &self.contents
+    }
+
+    pub fn contents_as_mut(&mut self) -> &mut Page<'b> {
         &mut self.contents
     }
 
@@ -272,7 +276,7 @@ mod tests {
             let buff1 = bm.pin(&BlockId::new("test_buffer_mgr", 1))?;
             {
                 let mut b1 = buff1.lock().unwrap();
-                let p = b1.contents();
+                let p = b1.contents_as_mut();
                 let n = p.get_i32(80).unwrap();
                 p.set_i32(80, n + 1).unwrap();
                 b1.set_modified(1, 0);
@@ -289,7 +293,7 @@ mod tests {
             buff2 = bm.pin(&BlockId::new("test_buffer_mgr", 1))?;
             {
                 let mut b2 = buff2.lock().unwrap();
-                let p2 = b2.contents();
+                let p2 = b2.contents_as_mut();
                 p2.set_i32(80, 9999).unwrap();
                 b2.set_modified(1, 0);
             }

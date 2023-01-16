@@ -9,7 +9,10 @@ use super::{
 };
 use crate::{
     file::block_id::BlockId,
-    query::{predicate::Constant, scan::RID},
+    query::{
+        predicate::Constant,
+        scan::{Result, Scan, UpdateScan, RID},
+    },
     tx::transaction::Transaction,
 };
 
@@ -91,21 +94,21 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         true
     }
 
-    pub fn get_i32(&mut self, fname: &str) -> i32 {
+    pub fn get_i32(&mut self, fname: &str) -> Result<i32> {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.get_i32(self.tx, *slot, fname).unwrap()
+        Ok(self.rp.get_i32(self.tx, *slot, fname)?)
     }
 
-    pub fn get_string(&mut self, fname: &str) -> String {
+    pub fn get_string(&mut self, fname: &str) -> Result<String> {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.get_string(self.tx, *slot, fname).unwrap()
+        Ok(self.rp.get_string(self.tx, *slot, fname)?)
     }
 
-    pub fn get_val(&mut self, fname: &str) -> Constant {
+    pub fn get_val(&mut self, fname: &str) -> Result<Constant> {
         if self.layout.schema().field_type(fname).unwrap() == SqlType::Integer {
-            return Constant::Int(self.get_i32(fname));
+            self.get_i32(fname).map(Constant::Int)
         } else {
-            return Constant::String(self.get_string(fname));
+            self.get_string(fname).map(Constant::String)
         }
     }
 
@@ -113,17 +116,17 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         self.layout.schema().has_field(fname)
     }
 
-    pub fn set_i32(&mut self, fname: &str, val: i32) {
+    pub fn set_i32(&mut self, fname: &str, val: i32) -> Result<()> {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.set_i32(self.tx, *slot, fname, val).unwrap(); // TODO
+        Ok(self.rp.set_i32(self.tx, *slot, fname, val)?)
     }
 
-    pub fn set_string(&mut self, fname: &str, val: String) {
+    pub fn set_string(&mut self, fname: &str, val: String) -> Result<()> {
         let slot = self.current_slot.as_ref().unwrap();
-        self.rp.set_string(self.tx, *slot, fname, val).unwrap(); // TODO
+        Ok(self.rp.set_string(self.tx, *slot, fname, val)?)
     }
 
-    pub fn set_val(&mut self, fname: &str, val: Constant) {
+    pub fn set_val(&mut self, fname: &str, val: Constant) -> Result<()> {
         let ftype = self.layout.schema().field_type(fname);
         match val {
             Constant::Int(v) if ftype == Some(SqlType::Integer) => self.set_i32(fname, v),
@@ -144,21 +147,86 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
         }
     }
 
-    pub fn delete(&mut self) {
-        let slot = self.current_slot.as_ref().unwrap();
-        self.rp.delete(self.tx, *slot).unwrap();
+    pub fn delete(&mut self) -> Result<()> {
+        if let Some(slot) = self.current_slot.as_ref() {
+            Ok(self.rp.delete(self.tx, *slot)?)
+        } else {
+            Ok(())
+        }
     }
 
-    pub fn move_to_rid(&mut self, rid: RID) {
+    pub fn move_to_rid(&mut self, rid: RID) -> Result<()> {
         self.close();
         let block = BlockId::new(&self.filename, rid.block_number());
-        self.tx.pin(&block).unwrap(); // TODO
+        self.tx.pin(&block)?;
         self.rp = RecordPage::new(block, self.layout);
         self.current_slot = rid.slot();
+        Ok(())
     }
 
     pub fn current_rid(&self) -> RID {
         RID::new(self.rp.block().number(), self.current_slot)
+    }
+}
+
+impl<'tx, 'lm, 'bm, 'lt, 'ly> Scan for TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
+    fn before_first(&mut self) {
+        TableScan::before_first(self);
+    }
+
+    fn next(&mut self) -> bool {
+        TableScan::next(self)
+    }
+
+    fn get_i32(&mut self, field_name: &str) -> crate::query::scan::Result<i32> {
+        TableScan::get_i32(self, field_name)
+    }
+
+    fn get_string(&mut self, field_name: &str) -> crate::query::scan::Result<String> {
+        TableScan::get_string(self, field_name)
+    }
+
+    fn get_val(&mut self, field_name: &str) -> crate::query::scan::Result<Constant> {
+        TableScan::get_val(self, field_name)
+    }
+
+    fn has_field(&self, field_name: &str) -> bool {
+        TableScan::has_field(self, field_name)
+    }
+
+    fn close(&mut self) {
+        TableScan::close(self);
+    }
+}
+
+impl<'tx, 'lm, 'bm, 'lt, 'ly> UpdateScan for TableScan<'tx, 'lm, 'bm, 'lt, 'ly> {
+    fn set_val(&mut self, field_name: &str, value: Constant) -> crate::query::scan::Result<()> {
+        TableScan::set_val(self, field_name, value)
+    }
+
+    fn set_i32(&mut self, field_name: &str, value: i32) -> crate::query::scan::Result<()> {
+        TableScan::set_i32(self, field_name, value)
+    }
+
+    fn set_string(&mut self, field_name: &str, value: String) -> crate::query::scan::Result<()> {
+        TableScan::set_string(self, field_name, value)
+    }
+
+    fn insert(&mut self) -> crate::query::scan::Result<()> {
+        TableScan::insert(self);
+        Ok(())
+    }
+
+    fn delete(&mut self) -> crate::query::scan::Result<()> {
+        TableScan::delete(self)
+    }
+
+    fn get_rid(&self) -> RID {
+        TableScan::current_rid(self)
+    }
+
+    fn move_to_rid(&mut self, rid: RID) -> crate::query::scan::Result<()> {
+        TableScan::move_to_rid(self, rid)
     }
 }
 
@@ -200,8 +268,8 @@ mod tests {
                 let mut i = 0;
                 ts.before_first();
                 while ts.next() {
-                    assert_eq!(ts.get_i32("A"), i);
-                    assert_eq!(ts.get_string("B"), format!("rec{i}"));
+                    assert_eq!(ts.get_i32("A").unwrap(), i);
+                    assert_eq!(ts.get_string("B").unwrap(), format!("rec{i}"));
                     i += 1;
                 }
                 assert_eq!(i, 50);
@@ -216,8 +284,8 @@ mod tests {
                 i = 0;
                 ts.before_first();
                 while ts.next() {
-                    assert_eq!(ts.get_i32("A"), i);
-                    assert_eq!(ts.get_string("B"), format!("rec{i}"));
+                    assert_eq!(ts.get_i32("A").unwrap(), i);
+                    assert_eq!(ts.get_string("B").unwrap(), format!("rec{i}"));
                     i += 2;
                 }
             }

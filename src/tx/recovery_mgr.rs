@@ -460,14 +460,14 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
     }
 
     pub fn set_i32(&mut self, buff: &mut Buffer, offset: usize, _newval: i32) -> Result<LSN> {
-        let oldval = buff.contents().get_i32(offset)?;
+        let oldval = buff.contents_as_mut().get_i32(offset)?;
         let blk = buff.block().as_ref().unwrap();
         let lsn = SetIntRecord::write_to_log(self.lm.clone(), self.txnum, blk, offset, oldval)?;
         Ok(lsn)
     }
 
     pub fn set_string(&self, buff: &mut Buffer, offset: usize, _newval: &str) -> Result<LSN> {
-        let oldval = buff.contents().get_string(offset)?;
+        let oldval = buff.contents_as_mut().get_string(offset)?;
         let blk = buff.block().as_ref().unwrap();
         let lsn = SetStringRecord::write_to_log(self.lm.clone(), self.txnum, blk, offset, oldval)?;
         Ok(lsn)

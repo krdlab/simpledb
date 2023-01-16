@@ -59,7 +59,7 @@ impl StatMgrData {
             let layout = self.tm.layout(TABLE_CATALOG_TABLE_NAME, tx).unwrap();
             let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &layout);
             while tcat.next() {
-                let table_name = tcat.get_string(TABLE_NAME_FIELD);
+                let table_name = tcat.get_string(TABLE_NAME_FIELD).unwrap();
                 table_names.push(table_name);
             }
         }

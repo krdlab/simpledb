@@ -153,8 +153,11 @@ impl IndexMgr {
 
             let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, &self.layout);
             while ts.next() {
-                if ts.get_string("tablename") == tblname {
-                    names.push((ts.get_string("indexname"), ts.get_string("fieldname")));
+                if ts.get_string("tablename").unwrap() == tblname {
+                    names.push((
+                        ts.get_string("indexname").unwrap(),
+                        ts.get_string("fieldname").unwrap(),
+                    ));
                 }
             }
 
