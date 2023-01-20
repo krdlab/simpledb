@@ -3,8 +3,6 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use std::{path::Path, sync::Arc};
-
 use crate::{
     buffer_mgr::BufferMgr,
     file::file_mgr::FileMgr,
@@ -15,6 +13,7 @@ use crate::{
         transaction::{Transaction, TxNumber},
     },
 };
+use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc};
 
 pub struct SimpleDB<'lm, 'bm> {
     fm: Arc<FileMgr>,
@@ -69,21 +68,21 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
     pub fn init(&mut self) {
         let is_new = self.fm.is_new();
 
-        let mut tx = self.new_tx();
-        let mm = MetadataMgr::new(is_new, &mut tx);
-        tx.commit().unwrap();
+        let tx = self.new_tx();
+        let mm = MetadataMgr::new(is_new, tx.clone());
+        tx.borrow_mut().commit().unwrap();
 
         self.mm = Some(mm);
     }
 
-    pub fn new_tx<'lt, 's: 'lt>(&'s self) -> Transaction<'lm, 'bm, 'lt> {
-        Transaction::new(
+    pub fn new_tx<'lt, 's: 'lt>(&'s self) -> Rc<RefCell<Transaction<'lm, 'bm, 'lt>>> {
+        Rc::new(RefCell::new(Transaction::new(
             self.tn.next(),
             self.fm.clone(),
             self.lm.clone(),
             self.bm.clone(),
             &self.lt,
-        )
+        )))
     }
 
     pub fn file_mgr(&self) -> Arc<FileMgr> {

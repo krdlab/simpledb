@@ -18,8 +18,11 @@ use crate::{
     },
     log_mgr::LogMgr,
 };
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    sync::atomic::{AtomicI32, Ordering},
+};
 use thiserror::Error;
 
 const END_OF_FILE: i32 = -1;
@@ -45,7 +48,7 @@ pub enum TransactionError {
 pub type Result<T> = core::result::Result<T, TransactionError>;
 
 pub(crate) struct TxInner<'lm, 'bm, 'lt> {
-    cm: ConcurrencyMgr<'lt>,
+    cm: RefCell<ConcurrencyMgr<'lt>>,
     bl: BufferList<'bm, 'lm>,
     txnum: i32,
 }
@@ -60,7 +63,7 @@ impl TxInner<'_, '_, '_> {
     }
 
     pub fn set_i32_for_recovery(&mut self, blk: &BlockId, offset: usize, val: i32) -> Result<()> {
-        self.cm.xlock(blk)?;
+        self.cm.borrow_mut().xlock(blk)?;
         let mut buff = self.bl.get_buffer(blk).unwrap().lock().unwrap();
         let lsn = -1;
         let p = buff.contents_as_mut();
@@ -75,7 +78,7 @@ impl TxInner<'_, '_, '_> {
         offset: usize,
         val: &str,
     ) -> Result<()> {
-        self.cm.xlock(blk)?;
+        self.cm.borrow_mut().xlock(blk)?;
         let mut buff = self.bl.get_buffer(blk).unwrap().lock().unwrap();
         let lsn = -1;
         let p = buff.contents_as_mut();
@@ -116,7 +119,7 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         lock_table: &'lt LockTable,
     ) -> Self {
         let inner = TxInner {
-            cm: ConcurrencyMgr::new(lock_table),
+            cm: RefCell::new(ConcurrencyMgr::new(lock_table)),
             bl: BufferList::new(bm.clone()),
             txnum,
         };
@@ -143,14 +146,14 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
 
     pub fn commit(&mut self) -> Result<()> {
         self.rm.commit()?;
-        self.inner.cm.release();
+        self.inner.cm.borrow_mut().release();
         self.inner.bl.unpin_all();
         Ok(())
     }
 
     pub fn rollback(&mut self) -> Result<()> {
         self.rm.rollback(&mut self.inner)?;
-        self.inner.cm.release();
+        self.inner.cm.borrow_mut().release();
         self.inner.bl.unpin_all();
         Ok(())
     }
@@ -161,15 +164,15 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         Ok(())
     }
 
-    pub fn get_i32(&mut self, blk: &BlockId, offset: usize) -> Result<i32> {
-        self.inner.cm.slock(blk)?;
+    pub fn get_i32(&self, blk: &BlockId, offset: usize) -> Result<i32> {
+        self.inner.cm.borrow_mut().slock(blk)?;
         let buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
         let val = buff.contents_as_ref().get_i32(offset)?;
         Ok(val)
     }
 
-    pub fn get_string(&mut self, blk: &BlockId, offset: usize) -> Result<String> {
-        self.inner.cm.slock(blk)?;
+    pub fn get_string(&self, blk: &BlockId, offset: usize) -> Result<String> {
+        self.inner.cm.borrow_mut().slock(blk)?;
         let mut buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
         let val = buff.contents_as_mut().get_string(offset)?;
         Ok(val)
@@ -182,7 +185,7 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         val: i32,
         ok_to_log: bool,
     ) -> Result<()> {
-        self.inner.cm.xlock(blk)?;
+        self.inner.cm.borrow_mut().xlock(blk)?;
         let mut buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
         let mut lsn = -1;
         if ok_to_log {
@@ -201,7 +204,7 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         val: &str,
         ok_to_log: bool,
     ) -> Result<()> {
-        self.inner.cm.xlock(blk)?;
+        self.inner.cm.borrow_mut().xlock(blk)?;
         let mut buff = self.inner.bl.get_buffer(blk).unwrap().lock().unwrap();
         let mut lsn = -1;
         if ok_to_log {
@@ -217,16 +220,16 @@ impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
         self.bm.available()
     }
 
-    pub fn size(&mut self, filename: &str) -> Result<u64> {
+    pub fn size(&self, filename: &str) -> Result<u64> {
         let dummyblk = BlockId::new(filename, END_OF_FILE.into());
-        self.inner.cm.slock(&dummyblk)?;
+        self.inner.cm.borrow_mut().slock(&dummyblk)?;
         let len = self.fm.length(filename)?;
         Ok(len)
     }
 
     pub fn append(&mut self, filename: &str) -> Result<BlockId> {
         let dummyblk = BlockId::new(filename, END_OF_FILE.into());
-        self.inner.cm.xlock(&dummyblk)?;
+        self.inner.cm.borrow_mut().xlock(&dummyblk)?;
         let block = self.fm.append(filename)?;
         Ok(block)
     }
@@ -248,36 +251,40 @@ mod tests {
         {
             let block = BlockId::new("test_transaction_file", 1);
 
-            let mut tx1 = db.new_tx();
-            tx1.pin(&block).unwrap();
-            tx1.set_i32(&block, 80, 1, false).unwrap();
-            tx1.set_string(&block, 40, "one", false).unwrap();
-            tx1.commit().unwrap();
+            let tx1 = db.new_tx();
+            tx1.borrow_mut().pin(&block).unwrap();
+            tx1.borrow_mut().set_i32(&block, 80, 1, false).unwrap();
+            tx1.borrow_mut()
+                .set_string(&block, 40, "one", false)
+                .unwrap();
+            tx1.borrow_mut().commit().unwrap();
 
-            let mut tx2 = db.new_tx();
-            tx2.pin(&block).unwrap();
-            let ival = tx2.get_i32(&block, 80).unwrap();
-            let sval = tx2.get_string(&block, 40).unwrap();
+            let tx2 = db.new_tx();
+            tx2.borrow_mut().pin(&block).unwrap();
+            let ival = tx2.borrow().get_i32(&block, 80).unwrap();
+            let sval = tx2.borrow().get_string(&block, 40).unwrap();
             assert_eq!(ival, 1);
             assert_eq!(sval, "one");
             let newival = ival + 1;
             let newsval = sval + "!";
-            tx2.set_i32(&block, 80, newival, true).unwrap();
-            tx2.set_string(&block, 40, &newsval, true).unwrap();
-            tx2.commit().unwrap();
+            tx2.borrow_mut().set_i32(&block, 80, newival, true).unwrap();
+            tx2.borrow_mut()
+                .set_string(&block, 40, &newsval, true)
+                .unwrap();
+            tx2.borrow_mut().commit().unwrap();
 
-            let mut tx3 = db.new_tx();
-            tx3.pin(&block).unwrap();
-            assert_eq!(tx3.get_i32(&block, 80).unwrap(), newival);
-            assert_eq!(tx3.get_string(&block, 40).unwrap(), newsval);
-            tx3.set_i32(&block, 80, 9999, true).unwrap();
-            assert_eq!(tx3.get_i32(&block, 80).unwrap(), 9999);
-            tx3.rollback().unwrap();
+            let tx3 = db.new_tx();
+            tx3.borrow_mut().pin(&block).unwrap();
+            assert_eq!(tx3.borrow().get_i32(&block, 80).unwrap(), newival);
+            assert_eq!(tx3.borrow().get_string(&block, 40).unwrap(), newsval);
+            tx3.borrow_mut().set_i32(&block, 80, 9999, true).unwrap();
+            assert_eq!(tx3.borrow().get_i32(&block, 80).unwrap(), 9999);
+            tx3.borrow_mut().rollback().unwrap();
 
-            let mut tx4 = db.new_tx();
-            tx4.pin(&block).unwrap();
-            assert_eq!(tx4.get_i32(&block, 80).unwrap(), newival);
-            tx4.commit().unwrap();
+            let tx4 = db.new_tx();
+            tx4.borrow_mut().pin(&block).unwrap();
+            assert_eq!(tx4.borrow().get_i32(&block, 80).unwrap(), newival);
+            tx4.borrow_mut().commit().unwrap();
         }
         dir.close().unwrap();
     }

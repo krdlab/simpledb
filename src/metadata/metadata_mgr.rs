@@ -13,7 +13,7 @@ use crate::{
     record::schema::{Layout, Schema},
     tx::transaction::Transaction,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 pub struct MetadataMgr {
     tm: Arc<TableMgr>,
@@ -23,40 +23,40 @@ pub struct MetadataMgr {
 }
 
 impl MetadataMgr {
-    pub fn new(is_new: bool, tx: &mut Transaction) -> Self {
+    pub fn new(is_new: bool, tx: Rc<RefCell<Transaction>>) -> Self {
         let tm = Arc::new(TableMgr::new());
         if is_new {
-            tm.init(tx);
+            tm.init(tx.clone());
         }
 
         let vm = Arc::new(ViewMgr::new(tm.clone()));
         if is_new {
-            vm.init(tx);
+            vm.init(tx.clone());
         }
 
         let sm = Arc::new(StatMgr::new(tm.clone()));
         if is_new {
-            sm.init(tx);
+            sm.init(tx.clone());
         }
 
-        let im = Arc::new(IndexMgr::new(is_new, tm.clone(), sm.clone(), tx));
+        let im = Arc::new(IndexMgr::new(is_new, tm.clone(), sm.clone(), tx.clone()));
 
         Self { tm, vm, sm, im }
     }
 
-    pub fn create_table(&self, table_name: &str, schema: Schema, tx: &mut Transaction) {
+    pub fn create_table(&self, table_name: &str, schema: Schema, tx: Rc<RefCell<Transaction>>) {
         self.tm.create_table(table_name, schema, tx);
     }
 
-    pub fn table_layout(&self, table_name: &str, tx: &mut Transaction) -> Option<Layout> {
+    pub fn table_layout(&self, table_name: &str, tx: Rc<RefCell<Transaction>>) -> Option<Layout> {
         self.tm.layout(table_name, tx)
     }
 
-    pub fn create_view(&self, view_name: &str, view_def: &str, tx: &mut Transaction) {
+    pub fn create_view(&self, view_name: &str, view_def: &str, tx: Rc<RefCell<Transaction>>) {
         self.vm.create_view(view_name, view_def, tx);
     }
 
-    pub fn view_def(&self, view_name: &str, tx: &mut Transaction) -> Option<String> {
+    pub fn view_def(&self, view_name: &str, tx: Rc<RefCell<Transaction>>) -> Option<String> {
         self.vm.view_def(view_name, tx)
     }
 
@@ -65,7 +65,7 @@ impl MetadataMgr {
         index_name: &str,
         table_name: &str,
         field_name: &str,
-        tx: &mut Transaction,
+        tx: Rc<RefCell<Transaction>>,
     ) {
         self.im.create_index(index_name, table_name, field_name, tx);
     }
@@ -73,7 +73,7 @@ impl MetadataMgr {
     pub fn table_index_info(
         &self,
         table_name: &str,
-        tx: &mut Transaction,
+        tx: Rc<RefCell<Transaction>>,
     ) -> HashMap<String, IndexInfo> {
         self.im.index_info(table_name, tx)
     }
@@ -82,7 +82,7 @@ impl MetadataMgr {
         &self,
         table_name: &str,
         layout: &Layout,
-        tx: &mut Transaction,
+        tx: Rc<RefCell<Transaction>>,
     ) -> StatInfo {
         self.sm.table_stat_info(table_name, layout, tx)
     }
@@ -111,7 +111,7 @@ mod tests {
 
             let mm = db.metadata_mgr();
             {
-                let mut tx = db.new_tx();
+                let tx = db.new_tx();
                 {
                     let mut schema = Schema::new();
                     schema.add_i32_field("A");
@@ -119,8 +119,8 @@ mod tests {
 
                     {
                         // part 1: table metadata
-                        mm.create_table("MyTable", schema, &mut tx);
-                        let layout = mm.table_layout("MyTable", &mut tx).unwrap();
+                        mm.create_table("MyTable", schema, tx.clone());
+                        let layout = mm.table_layout("MyTable", tx.clone()).unwrap();
                         assert_eq!(layout.slotsize(), 4 + 4 + (4 + 9 * 4));
 
                         let schema = layout.schema();
@@ -131,19 +131,19 @@ mod tests {
                     }
                     {
                         // part 2: statistics metadata
-                        let layout = mm.table_layout("MyTable", &mut tx).unwrap();
+                        let layout = mm.table_layout("MyTable", tx.clone()).unwrap();
                         {
-                            let mut ts = TableScan::new(&mut tx, "MyTable", &layout);
+                            let mut ts = TableScan::new(tx.clone(), "MyTable", &layout);
                             for i in 0..50 {
                                 ts.insert();
-                                ts.set_i32("A", i);
-                                ts.set_string("B", format!("rec{i}"));
+                                ts.set_i32("A", i).unwrap();
+                                ts.set_string("B", format!("rec{i}")).unwrap();
                             }
                         }
-                        let stat = mm.table_stat_info("MyTable", &layout, &mut tx);
+                        let stat = mm.table_stat_info("MyTable", &layout, tx.clone());
                         assert_eq!(
                             stat.blocks_accessed(),
-                            layout.slotsize() * 50 / tx.block_size() + 1
+                            layout.slotsize() * 50 / tx.borrow().block_size() + 1
                         );
                         assert_eq!(stat.records_output(), 50);
                         assert_eq!(stat.distinct_values("A"), 50 / 3 + 1);
@@ -152,18 +152,18 @@ mod tests {
                     {
                         // part 3: view metadata
                         let view_def = "SELECT b FROM MyTable WHERE A = 1";
-                        mm.create_view("viewA", view_def, &mut tx);
-                        let result = mm.view_def("viewA", &mut tx).unwrap();
+                        mm.create_view("viewA", view_def, tx.clone());
+                        let result = mm.view_def("viewA", tx.clone()).unwrap();
                         assert_eq!(result, view_def);
                     }
                     {
                         // part 4: index metadata
-                        let layout = mm.table_layout("MyTable", &mut tx).unwrap();
-                        let stat = mm.table_stat_info("MyTable", &layout, &mut tx);
+                        let layout = mm.table_layout("MyTable", tx.clone()).unwrap();
+                        let stat = mm.table_stat_info("MyTable", &layout, tx.clone());
 
-                        mm.create_index("indexA", "MyTable", "A", &mut tx);
-                        mm.create_index("indexB", "MyTable", "B", &mut tx);
-                        let indexes = mm.table_index_info("MyTable", &mut tx);
+                        mm.create_index("indexA", "MyTable", "A", tx.clone());
+                        mm.create_index("indexB", "MyTable", "B", tx.clone());
+                        let indexes = mm.table_index_info("MyTable", tx.clone());
                         assert_eq!(indexes.len(), 2);
                         {
                             let index_a = indexes.get("A").unwrap();
@@ -187,7 +187,7 @@ mod tests {
                         }
                     }
                 }
-                tx.commit().unwrap();
+                tx.borrow_mut().commit().unwrap();
             }
         }
     }

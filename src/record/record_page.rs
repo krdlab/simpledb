@@ -57,7 +57,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
         }
     }
 
-    fn is_valid_slot(&self, tx: &'tx mut Transaction<'lm, 'bm, 'lt>, slot: i32) -> bool {
+    fn is_valid_slot(&self, tx: &'tx Transaction<'lm, 'bm, 'lt>, slot: i32) -> bool {
         self.slot_offset(slot + 1)
             .map_or(false, |o| o <= tx.block_size())
     }
@@ -77,7 +77,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
 
     pub fn get_i32(
         &self,
-        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
+        tx: &'tx Transaction<'lm, 'bm, 'lt>,
         slot: i32,
         fname: &str,
     ) -> Result<i32> {
@@ -98,7 +98,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
 
     pub fn get_string(
         &self,
-        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
+        tx: &'tx Transaction<'lm, 'bm, 'lt>,
         slot: i32,
         fname: &str,
     ) -> Result<String> {
@@ -147,7 +147,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
 
     pub fn next_after(
         &self,
-        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
+        tx: &'tx Transaction<'lm, 'bm, 'lt>,
         slot: Option<i32>,
     ) -> Option<i32> {
         self.search_after(tx, slot, SlotFlag::Used)
@@ -177,7 +177,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
 
     fn search_after(
         &self,
-        tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
+        tx: &'tx Transaction<'lm, 'bm, 'lt>,
         slot: Option<i32>,
         flag: SlotFlag,
     ) -> Option<i32> {
@@ -199,6 +199,7 @@ impl<'ly, 'tx, 'lm, 'bm, 'lt> RecordPage<'ly> {
 
 #[cfg(test)]
 mod tests {
+    use super::RecordPage;
     use crate::{
         record::{
             record_page::SlotFlag,
@@ -207,8 +208,6 @@ mod tests {
         server::simple_db::SimpleDB,
     };
     use tempfile::tempdir;
-
-    use super::RecordPage;
 
     #[test]
     fn test() {
@@ -221,44 +220,45 @@ mod tests {
             schema.add_string_field("B", 9);
             let layout = Layout::new(schema);
 
-            let mut tx = db.new_tx();
+            let tx = db.new_tx();
             {
-                let block = tx.append("record_page_text").unwrap();
-                tx.pin(&block).unwrap();
+                let block = tx.borrow_mut().append("record_page_text").unwrap();
+                tx.borrow_mut().pin(&block).unwrap();
 
                 let rp = RecordPage::new(block.clone(), &layout);
-                rp.format(&mut tx).unwrap();
+                rp.format(&mut tx.borrow_mut()).unwrap();
 
-                let mut prev_slot = None;
-                while let Some(slot) = rp.insert_after(&mut tx, prev_slot) {
-                    let n = slot;
-                    rp.set_i32(&mut tx, slot, "A", n).unwrap();
-                    rp.set_string(&mut tx, slot, "B", format!("rec{}", n))
+                let mut slot = rp.insert_after(&mut tx.borrow_mut(), None);
+                while slot.is_some() {
+                    let n = slot.unwrap();
+                    rp.set_i32(&mut tx.borrow_mut(), n, "A", n).unwrap();
+                    rp.set_string(&mut tx.borrow_mut(), n, "B", format!("rec{}", n))
                         .unwrap();
-                    prev_slot = Some(slot);
+                    slot = rp.insert_after(&mut tx.borrow_mut(), slot);
                 }
 
-                prev_slot = None;
-                while let Some(slot) = rp.next_after(&mut tx, prev_slot) {
-                    let a = rp.get_i32(&mut tx, slot, "A").unwrap();
+                let mut prev_slot = None;
+                while let Some(slot) = rp.next_after(&tx.borrow(), prev_slot) {
+                    let a = rp.get_i32(&tx.borrow(), slot, "A").unwrap();
                     assert_eq!(a, slot);
-                    let b = rp.get_string(&mut tx, slot, "B").unwrap();
+                    let b = rp.get_string(&tx.borrow(), slot, "B").unwrap();
                     assert_eq!(b, format!("rec{}", slot));
                     prev_slot = Some(slot);
                 }
 
                 let slot_num = db.file_mgr().blocksize() / layout.slotsize();
                 let target_slot = (slot_num / 2) as i32;
-                rp.delete(&mut tx, target_slot).unwrap();
+                rp.delete(&mut tx.borrow_mut(), target_slot).unwrap();
 
-                let prev_slot_a = rp.get_i32(&mut tx, target_slot - 1, "A").unwrap();
+                let prev_slot_a = rp.get_i32(&tx.borrow(), target_slot - 1, "A").unwrap();
                 assert_eq!(prev_slot_a, target_slot - 1);
-                let next_slot = rp.search_after(&mut tx, Some(target_slot - 1), SlotFlag::Used);
+                let next_slot =
+                    rp.search_after(&tx.borrow(), Some(target_slot - 1), SlotFlag::Used);
                 assert_eq!(next_slot, Some(target_slot + 1));
 
-                tx.unpin(&block);
+                tx.borrow_mut().unpin(&block);
             }
-            tx.commit().unwrap();
+            tx.borrow_mut().commit().unwrap();
         }
         dir.close().unwrap();
     }

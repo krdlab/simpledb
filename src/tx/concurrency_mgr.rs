@@ -84,70 +84,70 @@ mod tests {
         {
             let ctx1 = ctx.clone();
             let th1 = thread::spawn(move || {
-                let mut tx = ctx1.db.new_tx();
+                let tx = ctx1.db.new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
-                tx.pin(&block1).unwrap();
-                tx.pin(&block2).unwrap();
+                tx.borrow_mut().pin(&block1).unwrap();
+                tx.borrow_mut().pin(&block2).unwrap();
 
                 println!("tx1: request slock 1");
-                tx.get_i32(&block1, 0).unwrap();
+                tx.borrow().get_i32(&block1, 0).unwrap();
                 println!("tx1: receive slock 1");
 
                 thread::sleep(Duration::from_millis(1000));
 
                 println!("tx1: request slock 2");
-                tx.get_i32(&block2, 0).unwrap();
+                tx.borrow().get_i32(&block2, 0).unwrap();
                 println!("tx1: receive slock 2");
 
-                tx.commit().unwrap();
+                tx.borrow_mut().commit().unwrap();
                 println!("tx1: commit");
             });
 
             let ctx2 = ctx.clone();
             let th2 = thread::spawn(move || {
-                let mut tx = ctx2.db.new_tx();
+                let tx = ctx2.db.new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
-                tx.pin(&block1).unwrap();
-                tx.pin(&block2).unwrap();
+                tx.borrow_mut().pin(&block1).unwrap();
+                tx.borrow_mut().pin(&block2).unwrap();
 
                 println!("tx2: request xlock 2");
-                tx.set_i32(&block2, 0, 0, false).unwrap();
+                tx.borrow_mut().set_i32(&block2, 0, 0, false).unwrap();
                 println!("tx2: receive xlock 2");
 
                 thread::sleep(Duration::from_millis(1000));
 
                 println!("tx2: request slock 1");
-                tx.get_i32(&block1, 0).unwrap();
+                tx.borrow().get_i32(&block1, 0).unwrap();
                 println!("tx2: receive slock 1");
 
-                tx.commit().unwrap();
+                tx.borrow_mut().commit().unwrap();
                 println!("tx2: commit");
             });
 
             let ctx3 = ctx.clone();
             let th3 = thread::spawn(move || {
-                let mut tx = ctx3.db.new_tx();
+                let tx = ctx3.db.new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
-                tx.pin(&block1).unwrap();
-                tx.pin(&block2).unwrap();
+                tx.borrow_mut().pin(&block1).unwrap();
+                tx.borrow_mut().pin(&block2).unwrap();
 
                 thread::sleep(Duration::from_millis(500));
                 println!("tx3: request xlock 1");
-                tx.set_i32(&block1, 0, 0, false).unwrap();
+                tx.borrow_mut().set_i32(&block1, 0, 0, false).unwrap();
                 println!("tx3: receive xlock 1");
 
                 thread::sleep(Duration::from_millis(1000));
                 println!("tx3: request slock 2");
-                tx.get_i32(&block2, 0).unwrap();
+                tx.borrow().get_i32(&block2, 0).unwrap();
                 println!("tx3: receive slock 2");
 
-                tx.commit().unwrap();
+                tx.borrow_mut().commit().unwrap();
                 println!("tx3: commit");
             });
 

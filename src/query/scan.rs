@@ -25,9 +25,9 @@ pub type Result<T> = core::result::Result<T, ScanError>;
 pub trait Scan {
     fn before_first(&mut self);
     fn next(&mut self) -> bool;
-    fn get_i32(&mut self, field_name: &str) -> Result<i32>;
-    fn get_string(&mut self, field_name: &str) -> Result<String>;
-    fn get_val(&mut self, field_name: &str) -> Result<Constant>;
+    fn get_i32(&self, field_name: &str) -> Result<i32>;
+    fn get_string(&self, field_name: &str) -> Result<String>;
+    fn get_val(&self, field_name: &str) -> Result<Constant>;
     fn has_field(&self, field_name: &str) -> bool;
     fn close(&mut self);
 }

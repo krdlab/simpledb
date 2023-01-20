@@ -8,7 +8,7 @@ use crate::{
     record::{schema::Schema, table_scan::TableScan},
     tx::transaction::Transaction,
 };
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 pub struct ViewMgr {
     tm: Arc<TableMgr>,
@@ -21,23 +21,23 @@ impl ViewMgr {
         Self { tm }
     }
 
-    pub fn init(&self, tx: &mut Transaction) {
+    pub fn init(&self, tx: Rc<RefCell<Transaction>>) {
         let mut schema = Schema::new();
         schema.add_string_field("viewname", MAX_NAME_LENGTH);
         schema.add_string_field("viewdef", MAX_VIEW_DEF);
         self.tm.create_table("viewcat", schema, tx);
     }
 
-    pub fn create_view(&self, vname: &str, vdef: &str, tx: &mut Transaction) {
-        let layout = self.tm.layout("viewcat", tx).unwrap(); // TODO
+    pub fn create_view(&self, vname: &str, vdef: &str, tx: Rc<RefCell<Transaction>>) {
+        let layout = self.tm.layout("viewcat", tx.clone()).unwrap(); // TODO
         let mut ts = TableScan::new(tx, "viewcat", &layout);
         ts.insert();
-        ts.set_string("viewname", vname.into());
-        ts.set_string("viewdef", vdef.into());
+        ts.set_string("viewname", vname.into()).unwrap();
+        ts.set_string("viewdef", vdef.into()).unwrap();
     }
 
-    pub fn view_def(&self, vname: &str, tx: &mut Transaction) -> Option<String> {
-        let layout = self.tm.layout("viewcat", tx).unwrap(); // TODO
+    pub fn view_def(&self, vname: &str, tx: Rc<RefCell<Transaction>>) -> Option<String> {
+        let layout = self.tm.layout("viewcat", tx.clone()).unwrap(); // TODO
         let mut ts = TableScan::new(tx, "viewcat", &layout);
         while ts.next() {
             if let Ok(vn) = ts.get_string("viewname") {
@@ -62,24 +62,24 @@ mod tests {
         let dir = tempdir().unwrap();
         {
             let db = SimpleDB::new_for_test(dir.path(), "view_mgr_test.log");
-            let mut tx = db.new_tx();
+            let tx = db.new_tx();
             {
                 let tm = Arc::new(TableMgr::new());
-                tm.init(&mut tx);
+                tm.init(tx.clone());
                 let vm = ViewMgr::new(tm.clone());
-                vm.init(&mut tx);
+                vm.init(tx.clone());
 
-                vm.create_view("FirstView", "SELECT * FROM t", &mut tx);
+                vm.create_view("FirstView", "SELECT * FROM t", tx.clone());
                 vm.create_view(
                     "MyView",
                     "SELECT qty, price, qty*price AS value FROM t",
-                    &mut tx,
+                    tx.clone(),
                 );
 
-                let viewdef = vm.view_def("MyView", &mut tx).unwrap();
+                let viewdef = vm.view_def("MyView", tx.clone()).unwrap();
                 assert_eq!(viewdef, "SELECT qty, price, qty*price AS value FROM t");
             }
-            tx.commit().unwrap();
+            tx.borrow_mut().commit().unwrap();
         }
     }
 }

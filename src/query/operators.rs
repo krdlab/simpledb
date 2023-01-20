@@ -38,15 +38,15 @@ where
         return false;
     }
 
-    fn get_i32(&mut self, field_name: &str) -> super::scan::Result<i32> {
+    fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
         self.scan.get_i32(field_name)
     }
 
-    fn get_string(&mut self, field_name: &str) -> super::scan::Result<String> {
+    fn get_string(&self, field_name: &str) -> super::scan::Result<String> {
         self.scan.get_string(field_name)
     }
 
-    fn get_val(&mut self, field_name: &str) -> super::scan::Result<Constant> {
+    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
         self.scan.get_val(field_name)
     }
 
@@ -117,7 +117,7 @@ where
         self.scan.next()
     }
 
-    fn get_i32(&mut self, field_name: &str) -> super::scan::Result<i32> {
+    fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
         if self.has_field(field_name) {
             self.scan.get_i32(field_name)
         } else {
@@ -125,7 +125,7 @@ where
         }
     }
 
-    fn get_string(&mut self, field_name: &str) -> super::scan::Result<String> {
+    fn get_string(&self, field_name: &str) -> super::scan::Result<String> {
         if self.has_field(field_name) {
             self.scan.get_string(field_name)
         } else {
@@ -133,7 +133,7 @@ where
         }
     }
 
-    fn get_val(&mut self, field_name: &str) -> super::scan::Result<Constant> {
+    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
         if self.has_field(field_name) {
             self.scan.get_val(field_name)
         } else {
@@ -182,7 +182,7 @@ where
         }
     }
 
-    fn get_i32(&mut self, field_name: &str) -> super::scan::Result<i32> {
+    fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_i32(field_name)
         } else {
@@ -190,7 +190,7 @@ where
         }
     }
 
-    fn get_string(&mut self, field_name: &str) -> super::scan::Result<String> {
+    fn get_string(&self, field_name: &str) -> super::scan::Result<String> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_string(field_name)
         } else {
@@ -198,7 +198,7 @@ where
         }
     }
 
-    fn get_val(&mut self, field_name: &str) -> super::scan::Result<Constant> {
+    fn get_val(&self, field_name: &str) -> super::scan::Result<Constant> {
         if self.scan1.has_field(field_name) {
             self.scan1.get_val(field_name)
         } else {
@@ -218,6 +218,124 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::{ProductScan, ProjectScan, SelectScan};
+    use crate::{
+        query::{
+            predicate::{Constant, Expression, Predicate, Term},
+            scan::Scan,
+        },
+        record::{
+            schema::{Layout, Schema},
+            table_scan::TableScan,
+        },
+        server::simple_db::SimpleDB,
+    };
+    use tempfile::tempdir;
+
     #[test]
-    fn test() {}
+    fn test1() {
+        let dir = tempdir().unwrap();
+        {
+            let db = SimpleDB::new_for_test(dir.path(), "operators_test1.log");
+
+            let mut schema = Schema::new();
+            schema.add_i32_field("A");
+            schema.add_string_field("B", 9);
+            let layout = Layout::new(schema);
+
+            let tx = db.new_tx();
+            {
+                let mut s1 = TableScan::new(tx.clone(), "T", &layout);
+                s1.before_first();
+                for i in 0..200 {
+                    s1.insert();
+                    s1.set_i32("A", i).unwrap();
+                    s1.set_string("B", format!("rec{}", i)).unwrap();
+                }
+            }
+            {
+                let s2 = TableScan::new(tx.clone(), "T", &layout);
+                let c = Constant::Int(10);
+                let t = Term::new(Expression::FieldName("A".into()), Expression::Constant(c));
+                let pred = Predicate::new(t);
+
+                let s3 = SelectScan::new(s2, pred);
+                let mut s4 = ProjectScan::new(s3, vec!["B".into()]);
+                s4.before_first();
+
+                assert!(s4.next());
+                assert_eq!(s4.get_string("B").unwrap(), "rec10");
+                assert!(!s4.next());
+            }
+            tx.borrow_mut().commit().unwrap();
+        }
+        dir.close().unwrap();
+    }
+
+    #[test]
+    fn test2() {
+        let dir = tempdir().unwrap();
+        {
+            let db = SimpleDB::new_for_test(dir.path(), "operators_test2.log");
+            let tx = db.new_tx();
+
+            {
+                let mut schema1 = Schema::new();
+                schema1.add_i32_field("A");
+                schema1.add_string_field("B", 9);
+                let layout1 = Layout::new(schema1);
+                {
+                    let mut us1 = TableScan::new(tx.clone(), "T1", &layout1);
+                    us1.before_first();
+
+                    for i in 0..200 {
+                        us1.insert();
+                        us1.set_i32("A", i).unwrap();
+                        us1.set_string("B", format!("str{}", i)).unwrap();
+                    }
+                }
+
+                let mut schema2 = Schema::new();
+                schema2.add_i32_field("C");
+                schema2.add_string_field("D", 9);
+                let layout2 = Layout::new(schema2);
+                {
+                    let mut us2 = TableScan::new(tx.clone(), "T2", &layout2);
+                    us2.before_first();
+                    for i in 0..200 {
+                        us2.insert();
+                        let num = 200 - (i - 1);
+                        us2.set_i32("C", num).unwrap();
+                        us2.set_string("D", format!("str{}", num)).unwrap();
+                    }
+                }
+
+                {
+                    let s1 = TableScan::new(tx.clone(), "T1", &layout1);
+                    let s2 = TableScan::new(tx.clone(), "T2", &layout2);
+                    let s3 = ProductScan::new(s1, s2);
+
+                    let t = Term::new(
+                        Expression::FieldName("A".into()),
+                        Expression::FieldName("C".into()),
+                    );
+                    let pred = Predicate::new(t);
+
+                    let s4 = SelectScan::new(s3, pred);
+                    let mut s5 = ProjectScan::new(s4, vec!["B".into(), "D".into()]);
+                    s5.before_first();
+                    while s5.next() {
+                        println!(
+                            "{}, {}",
+                            s5.get_string("B").unwrap(),
+                            s5.get_string("D").unwrap()
+                        );
+                        //assert_eq!(s5.get_string("B").unwrap(), s5.get_string("D").unwrap());
+                    }
+                }
+            }
+            tx.borrow_mut().commit().unwrap();
+        }
+        dir.close().unwrap();
+    }
 }

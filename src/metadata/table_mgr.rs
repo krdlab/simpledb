@@ -3,8 +3,6 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use std::collections::HashMap;
-
 use crate::{
     record::{
         schema::{Layout, Schema},
@@ -12,6 +10,7 @@ use crate::{
     },
     tx::transaction::Transaction,
 };
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 pub struct TableMgr {
     tcat_layout: Layout,
@@ -44,11 +43,11 @@ impl TableMgr {
         }
     }
 
-    pub fn init(&self, tx: &mut Transaction) {
+    pub fn init(&self, tx: Rc<RefCell<Transaction>>) {
         self.create_table(
             TABLE_CATALOG_TABLE_NAME,
             self.tcat_layout.schema().clone(),
-            tx,
+            tx.clone(),
         );
         self.create_table(
             FIELD_CATALOG_TABLE_NAME,
@@ -57,31 +56,32 @@ impl TableMgr {
         );
     }
 
-    pub fn create_table(&self, tblname: &str, schema: Schema, tx: &mut Transaction) {
+    pub fn create_table(&self, tblname: &str, schema: Schema, tx: Rc<RefCell<Transaction>>) {
         let layout = Layout::new(schema.clone());
         {
-            let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
+            let mut tcat = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
             tcat.insert();
-            tcat.set_string(TABLE_NAME_FIELD, tblname.into());
-            tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap()); // TODO
+            tcat.set_string(TABLE_NAME_FIELD, tblname.into()).unwrap();
+            tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap())
+                .unwrap(); // TODO
         }
         {
-            let mut fcat = TableScan::new(tx, FIELD_CATALOG_TABLE_NAME, &self.fcat_layout);
+            let mut fcat = TableScan::new(tx.clone(), FIELD_CATALOG_TABLE_NAME, &self.fcat_layout);
             for fldname in schema.fields_iter() {
                 let ftype = schema.field_type(fldname).unwrap(); // NOTE: If the returned value is None, it's a bug.
                 let flength = schema.field_length(fldname).unwrap(); // NOTE: same as above
                 let foffset = layout.field_offset(fldname).unwrap();
                 fcat.insert();
-                fcat.set_string(TABLE_NAME_FIELD, tblname.into());
-                fcat.set_string("fldname", fldname.into());
-                fcat.set_i32("type", ftype.into());
-                fcat.set_i32("length", flength.try_into().unwrap()); // TODO
-                fcat.set_i32("offset", foffset.try_into().unwrap()); // TODO
+                fcat.set_string(TABLE_NAME_FIELD, tblname.into()).unwrap();
+                fcat.set_string("fldname", fldname.into()).unwrap();
+                fcat.set_i32("type", ftype.into()).unwrap();
+                fcat.set_i32("length", flength.try_into().unwrap()).unwrap(); // TODO
+                fcat.set_i32("offset", foffset.try_into().unwrap()).unwrap(); // TODO
             }
         }
     }
 
-    fn table_slotsize(&self, tblname: &str, tx: &mut Transaction) -> Option<usize> {
+    fn table_slotsize(&self, tblname: &str, tx: Rc<RefCell<Transaction>>) -> Option<usize> {
         let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, &self.tcat_layout);
         while tcat.next() {
             if let Ok(tn) = tcat.get_string(TABLE_NAME_FIELD) {
@@ -94,8 +94,8 @@ impl TableMgr {
         None
     }
 
-    pub fn layout(&self, tblname: &str, tx: &mut Transaction) -> Option<Layout> {
-        if let Some(size) = self.table_slotsize(tblname, tx) {
+    pub fn layout(&self, tblname: &str, tx: Rc<RefCell<Transaction>>) -> Option<Layout> {
+        if let Some(size) = self.table_slotsize(tblname, tx.clone()) {
             let mut schema = Schema::new();
             let mut offsets = HashMap::new();
 
@@ -142,17 +142,17 @@ mod tests {
         let dir = tempdir().unwrap();
         {
             let db = SimpleDB::new_for_test(dir.path(), "table_mgr_test.log");
-            let mut tx = db.new_tx();
+            let tx = db.new_tx();
 
             let tm = TableMgr::new();
-            tm.init(&mut tx);
+            tm.init(tx.clone());
             {
                 let mut schema = Schema::new();
                 schema.add_i32_field("A");
                 schema.add_string_field("B", 9);
-                tm.create_table("MyTable", schema, &mut tx);
+                tm.create_table("MyTable", schema, tx.clone());
 
-                let layout = tm.layout("MyTable", &mut tx).unwrap();
+                let layout = tm.layout("MyTable", tx.clone()).unwrap();
                 assert_eq!(layout.slotsize(), 48); // NOTE: 4 + 4 + 4 (area of string bytes length) + (9 (field length) * 4 (bytes/char))
 
                 let schema2 = layout.schema();
@@ -171,7 +171,7 @@ mod tests {
                 assert_eq!(field_iter.next(), None);
             }
 
-            tx.commit().unwrap();
+            tx.borrow_mut().commit().unwrap();
         }
         dir.close().unwrap();
     }
@@ -181,14 +181,14 @@ mod tests {
         let dir = tempdir().unwrap();
         {
             let db = SimpleDB::new_for_test(dir.path(), "table_mgr_test_catalog.log");
-            let mut tx = db.new_tx();
+            let tx = db.new_tx();
             {
                 let tm = TableMgr::new();
-                tm.init(&mut tx);
-                let tcat_layout = tm.layout(TABLE_CATALOG_TABLE_NAME, &mut tx).unwrap();
-                let fcat_layout = tm.layout(FIELD_CATALOG_TABLE_NAME, &mut tx).unwrap();
+                tm.init(tx.clone());
+                let tcat_layout = tm.layout(TABLE_CATALOG_TABLE_NAME, tx.clone()).unwrap();
+                let fcat_layout = tm.layout(FIELD_CATALOG_TABLE_NAME, tx.clone()).unwrap();
                 {
-                    let mut ts = TableScan::new(&mut tx, TABLE_CATALOG_TABLE_NAME, &tcat_layout);
+                    let mut ts = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, &tcat_layout);
                     assert_eq!(ts.next(), true);
                     assert_eq!(
                         ts.get_string(TABLE_NAME_FIELD).unwrap(),
@@ -210,7 +210,7 @@ mod tests {
                     assert_eq!(ts.next(), false);
                 }
                 {
-                    let mut ts = TableScan::new(&mut tx, FIELD_CATALOG_TABLE_NAME, &fcat_layout);
+                    let mut ts = TableScan::new(tx.clone(), FIELD_CATALOG_TABLE_NAME, &fcat_layout);
 
                     // NOTE: table catalog's fields
                     assert_eq!(ts.next(), true);
@@ -303,7 +303,7 @@ mod tests {
                     assert_eq!(ts.next(), false);
                 }
             }
-            tx.commit().unwrap();
+            tx.borrow_mut().commit().unwrap();
         }
         dir.close().unwrap();
     }
