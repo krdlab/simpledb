@@ -14,6 +14,7 @@ pub struct ViewMgr {
     tm: Arc<TableMgr>,
 }
 
+const VIEW_CATALOG_TABLE_NAME: &str = "viewcat";
 const MAX_VIEW_DEF: usize = 100; // CAVEAT: The DB BLOCK_SIZE must be sufficiently larger than four times this value.
 
 impl ViewMgr {
@@ -25,20 +26,20 @@ impl ViewMgr {
         let mut schema = Schema::new();
         schema.add_string_field("viewname", MAX_NAME_LENGTH);
         schema.add_string_field("viewdef", MAX_VIEW_DEF);
-        self.tm.create_table("viewcat", schema, tx);
+        self.tm.create_table(VIEW_CATALOG_TABLE_NAME, schema, tx);
     }
 
     pub fn create_view(&self, vname: &str, vdef: &str, tx: Rc<RefCell<Transaction>>) {
-        let layout = self.tm.layout("viewcat", tx.clone()).unwrap(); // TODO
-        let mut ts = TableScan::new(tx, "viewcat", &layout);
+        let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone()).unwrap(); // TODO
+        let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME, &layout);
         ts.insert();
         ts.set_string("viewname", vname.into()).unwrap();
         ts.set_string("viewdef", vdef.into()).unwrap();
     }
 
     pub fn view_def(&self, vname: &str, tx: Rc<RefCell<Transaction>>) -> Option<String> {
-        let layout = self.tm.layout("viewcat", tx.clone()).unwrap(); // TODO
-        let mut ts = TableScan::new(tx, "viewcat", &layout);
+        let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone()).unwrap(); // TODO
+        let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME, &layout);
         while ts.next() {
             if let Ok(vn) = ts.get_string("viewname") {
                 if vn == vname {

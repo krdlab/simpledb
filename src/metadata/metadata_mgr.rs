@@ -39,7 +39,10 @@ impl MetadataMgr {
             sm.init(tx.clone());
         }
 
-        let im = Arc::new(IndexMgr::new(is_new, tm.clone(), sm.clone(), tx.clone()));
+        let im = Arc::new(IndexMgr::new(tm.clone(), sm.clone()));
+        if is_new {
+            im.init(tx.clone());
+        }
 
         Self { tm, vm, sm, im }
     }

@@ -19,16 +19,16 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 /* FIXME: begin draft implementations */
 pub trait Index {}
 struct HashIndex<'ly> {
-    index_name: String,
-    layout: &'ly Layout,
+    _index_name: String,
+    _layout: &'ly Layout,
 }
 impl<'ly> HashIndex<'ly> {
     const NUM_BUCKETS: usize = 100;
 
     pub fn new(index_name: impl Into<String>, layout: &'ly Layout) -> Self {
         Self {
-            index_name: index_name.into(),
-            layout,
+            _index_name: index_name.into(),
+            _layout: layout,
         }
     }
 
@@ -42,7 +42,7 @@ impl<'ly> Index for HashIndex<'ly> {}
 pub struct IndexInfo {
     index_name: String,
     field_name: String,
-    table_schema: Schema,
+    _table_schema: Schema,
     block_size: usize,
     index_layout: Layout,
     stat_info: StatInfo,
@@ -60,7 +60,7 @@ impl IndexInfo {
         Self {
             index_name: index_name.into(),
             field_name: field_name.into(),
-            table_schema,
+            _table_schema: table_schema,
             block_size,
             index_layout,
             stat_info,
@@ -108,31 +108,22 @@ impl IndexInfo {
 const INDEX_CATALOG_TABLE_NAME: &str = "idxcat";
 
 pub struct IndexMgr {
-    layout: Layout,
+    // layout: Layout,
     tm: Arc<TableMgr>,
     sm: Arc<StatMgr>,
 }
 
 impl IndexMgr {
-    pub fn new(
-        is_new: bool,
-        tm: Arc<TableMgr>,
-        sm: Arc<StatMgr>,
-        tx: Rc<RefCell<Transaction>>,
-    ) -> Self {
-        if is_new {
-            let mut schema = Schema::new();
-            schema.add_string_field("indexname", MAX_NAME_LENGTH);
-            schema.add_string_field("tablename", MAX_NAME_LENGTH);
-            schema.add_string_field("fieldname", MAX_NAME_LENGTH);
-            tm.create_table(INDEX_CATALOG_TABLE_NAME, schema, tx.clone());
-        }
+    pub fn new(tm: Arc<TableMgr>, sm: Arc<StatMgr>) -> Self {
+        Self { tm, sm }
+    }
 
-        Self {
-            layout: tm.layout(INDEX_CATALOG_TABLE_NAME, tx).unwrap(),
-            tm,
-            sm,
-        }
+    pub fn init(&self, tx: Rc<RefCell<Transaction>>) {
+        let mut schema = Schema::new();
+        schema.add_string_field("indexname", MAX_NAME_LENGTH);
+        schema.add_string_field("tablename", MAX_NAME_LENGTH);
+        schema.add_string_field("fieldname", MAX_NAME_LENGTH);
+        self.tm.create_table(INDEX_CATALOG_TABLE_NAME, schema, tx);
     }
 
     pub fn create_index(
@@ -142,11 +133,16 @@ impl IndexMgr {
         field_name: &str,
         tx: Rc<RefCell<Transaction>>,
     ) {
-        let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME, &self.layout);
+        let layout = self.index_catalog_layout(&tx).unwrap();
+        let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, &layout);
         ts.insert();
         ts.set_string("indexname", index_name.into()).unwrap();
         ts.set_string("tablename", table_name.into()).unwrap();
         ts.set_string("fieldname", field_name.into()).unwrap();
+    }
+
+    fn index_catalog_layout(&self, tx: &Rc<RefCell<Transaction>>) -> Option<Layout> {
+        self.tm.layout(INDEX_CATALOG_TABLE_NAME, tx.clone())
     }
 
     pub fn index_info(
@@ -160,7 +156,8 @@ impl IndexMgr {
             let tblname: String = table_name.into();
             let mut names = Vec::new();
 
-            let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME, &self.layout);
+            let layout = self.index_catalog_layout(&tx).unwrap();
+            let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME, &layout);
             while ts.next() {
                 if ts.get_string("tablename").unwrap() == tblname {
                     names.push((
@@ -218,7 +215,8 @@ mod tests {
                     tm.create_table("MyTable", schema, tx.clone());
                 }
 
-                let im = IndexMgr::new(true, tm.clone(), sm.clone(), tx.clone());
+                let im = IndexMgr::new(tm.clone(), sm.clone());
+                im.init(tx.clone());
                 im.create_index("my-index", "MyTable", "id", tx.clone());
 
                 let ii_map = im.index_info("MyTable", tx.clone());
