@@ -325,12 +325,7 @@ mod tests {
                     let mut s5 = ProjectScan::new(s4, vec!["B".into(), "D".into()]);
                     s5.before_first();
                     while s5.next() {
-                        println!(
-                            "{}, {}",
-                            s5.get_string("B").unwrap(),
-                            s5.get_string("D").unwrap()
-                        );
-                        //assert_eq!(s5.get_string("B").unwrap(), s5.get_string("D").unwrap());
+                        assert_eq!(s5.get_string("B").unwrap(), s5.get_string("D").unwrap());
                     }
                 }
             }
