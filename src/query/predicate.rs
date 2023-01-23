@@ -16,12 +16,12 @@ pub enum Constant {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub enum Term {
     Constant(Constant),
     FieldName(String),
 }
 
-impl Expression {
+impl Term {
     pub fn evaluate<S: Scan>(&self, s: &mut S) -> Constant {
         match self {
             Self::Constant(val) => val.clone(),
@@ -36,7 +36,7 @@ impl Expression {
         }
     }
 
-    pub fn applyTo(&self, schema: &Schema) -> bool {
+    pub fn apply_to(&self, schema: &Schema) -> bool {
         match self {
             Self::Constant(_) => true,
             Self::FieldName(fname) => schema.has_field(fname),
@@ -45,13 +45,13 @@ impl Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct Term {
-    lhs: Expression,
-    rhs: Expression,
+pub struct Expression {
+    lhs: Term,
+    rhs: Term,
 }
 
-impl Term {
-    pub fn new(lhs: Expression, rhs: Expression) -> Self {
+impl Expression {
+    pub fn new(lhs: Term, rhs: Term) -> Self {
         Self { lhs, rhs }
     }
 
@@ -69,16 +69,16 @@ impl Term {
 
     // F = c
     pub fn equates_with_constant(&self, field_name: &str) -> Option<Constant> {
-        if let Expression::FieldName(fname) = &self.lhs {
+        if let Term::FieldName(fname) = &self.lhs {
             if fname == field_name {
-                if let Expression::Constant(v) = &self.rhs {
+                if let Term::Constant(v) = &self.rhs {
                     return Some(v.clone());
                 }
             }
         }
-        if let Expression::FieldName(fname) = &self.rhs {
+        if let Term::FieldName(fname) = &self.rhs {
             if fname == field_name {
-                if let Expression::Constant(v) = &self.lhs {
+                if let Term::Constant(v) = &self.lhs {
                     return Some(v.clone());
                 }
             }
@@ -87,16 +87,16 @@ impl Term {
     }
 
     pub fn equates_with_field(&self, field_name: &str) -> Option<String> {
-        if let Expression::FieldName(fname) = &self.lhs {
+        if let Term::FieldName(fname) = &self.lhs {
             if fname == field_name {
-                if let Expression::FieldName(v) = &self.rhs {
+                if let Term::FieldName(v) = &self.rhs {
                     return Some(v.clone());
                 }
             }
         }
-        if let Expression::FieldName(fname) = &self.rhs {
+        if let Term::FieldName(fname) = &self.rhs {
             if fname == field_name {
-                if let Expression::FieldName(v) = &self.lhs {
+                if let Term::FieldName(v) = &self.lhs {
                     return Some(v.clone());
                 }
             }
@@ -104,12 +104,12 @@ impl Term {
         None
     }
 
-    pub fn applyTo(&self, schema: &Schema) -> bool {
-        self.lhs.applyTo(schema) && self.rhs.applyTo(schema)
+    pub fn apply_to(&self, schema: &Schema) -> bool {
+        self.lhs.apply_to(schema) && self.rhs.apply_to(schema)
     }
 }
 
-impl Display for Term {
+impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} = {:?}", self.lhs, self.rhs)
     }
@@ -117,24 +117,24 @@ impl Display for Term {
 
 #[derive(Debug)]
 pub struct Predicate {
-    terms: Vec<Term>,
+    exprs: Vec<Expression>,
 }
 
 impl Predicate {
     pub fn empty() -> Self {
-        Self { terms: Vec::new() }
+        Self { exprs: Vec::new() }
     }
 
-    pub fn new(t: Term) -> Self {
-        Self { terms: vec![t] }
+    pub fn new(t: Expression) -> Self {
+        Self { exprs: vec![t] }
     }
 
     pub fn conjoin_with(&mut self, mut pred: Predicate) {
-        self.terms.append(&mut pred.terms);
+        self.exprs.append(&mut pred.exprs);
     }
 
     pub fn is_satisfied<S: Scan>(&self, scan: &mut S) -> bool {
-        for t in self.terms.iter() {
+        for t in self.exprs.iter() {
             if !t.is_satisfied(scan) {
                 return false;
             }
@@ -150,12 +150,12 @@ impl Predicate {
 
     pub fn select_sub_pred(&self, schema: &Schema) -> Option<Predicate> {
         let mut result = Predicate::empty();
-        for t in self.terms.iter() {
-            if t.applyTo(schema) {
-                result.terms.push(t.clone());
+        for t in self.exprs.iter() {
+            if t.apply_to(schema) {
+                result.exprs.push(t.clone());
             }
         }
-        if result.terms.len() == 0 {
+        if result.exprs.len() == 0 {
             None
         } else {
             Some(result)
@@ -168,13 +168,13 @@ impl Predicate {
         new_schema.add_all(&schema2);
 
         let mut result = Predicate::empty();
-        for t in self.terms.iter() {
-            if !t.applyTo(&schema1) && !t.applyTo(&schema2) && t.applyTo(&new_schema) {
-                result.terms.push(t.clone());
+        for t in self.exprs.iter() {
+            if !t.apply_to(&schema1) && !t.apply_to(&schema2) && t.apply_to(&new_schema) {
+                result.exprs.push(t.clone());
             }
         }
 
-        if result.terms.len() == 0 {
+        if result.exprs.len() == 0 {
             None
         } else {
             Some(result)
@@ -182,7 +182,7 @@ impl Predicate {
     }
 
     pub fn equates_with_constant(&self, field_name: &str) -> Option<Constant> {
-        for t in self.terms.iter() {
+        for t in self.exprs.iter() {
             if let Some(c) = t.equates_with_constant(field_name) {
                 return Some(c);
             }
@@ -191,7 +191,7 @@ impl Predicate {
     }
 
     pub fn equates_with_field(&self, field_name: &str) -> Option<String> {
-        for t in self.terms.iter() {
+        for t in self.exprs.iter() {
             if let Some(f) = t.equates_with_field(field_name) {
                 return Some(f);
             }
@@ -218,5 +218,20 @@ mod tests {
         assert!(Int(0) > Int(-1));
         assert!(String("abc".into()) < String("abd".into()));
         assert!(String("abd".into()) > String("abc".into()));
+    }
+
+    #[test]
+    fn test_term() {
+        // NOTE: see: operators::tests
+    }
+
+    #[test]
+    fn test_expression() {
+        // NOTE: see: operators::tests
+    }
+
+    #[test]
+    fn test_predicate() {
+        // NOTE: see: operators::tests
     }
 }

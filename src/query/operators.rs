@@ -221,7 +221,7 @@ mod tests {
     use super::{ProductScan, ProjectScan, SelectScan};
     use crate::{
         query::{
-            predicate::{Constant, Expression, Predicate, Term},
+            predicate::{Constant, Term, Predicate, Expression},
             scan::Scan,
         },
         record::{
@@ -256,7 +256,7 @@ mod tests {
             {
                 let s2 = TableScan::new(tx.clone(), "T", &layout);
                 let c = Constant::Int(10);
-                let t = Term::new(Expression::FieldName("A".into()), Expression::Constant(c));
+                let t = Expression::new(Term::FieldName("A".into()), Term::Constant(c));
                 let pred = Predicate::new(t);
 
                 let s3 = SelectScan::new(s2, pred);
@@ -315,9 +315,9 @@ mod tests {
                     let s2 = TableScan::new(tx.clone(), "T2", &layout2);
                     let s3 = ProductScan::new(s1, s2);
 
-                    let t = Term::new(
-                        Expression::FieldName("A".into()),
-                        Expression::FieldName("C".into()),
+                    let t = Expression::new(
+                        Term::FieldName("A".into()),
+                        Term::FieldName("C".into()),
                     );
                     let pred = Predicate::new(t);
 
