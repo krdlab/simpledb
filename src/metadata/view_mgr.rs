@@ -3,6 +3,7 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use super::common::{MetadataError, Result};
 use super::table_mgr::{TableMgr, MAX_NAME_LENGTH};
 use crate::{
     record::{schema::Schema, table_scan::TableScan},
@@ -26,28 +27,31 @@ impl ViewMgr {
         let mut schema = Schema::new();
         schema.add_string_field("viewname", MAX_NAME_LENGTH);
         schema.add_string_field("viewdef", MAX_VIEW_DEF);
-        self.tm.create_table(VIEW_CATALOG_TABLE_NAME, schema, tx);
+        self.tm
+            .create_table(VIEW_CATALOG_TABLE_NAME, schema, tx)
+            .unwrap();
     }
 
-    pub fn create_view(&self, vname: &str, vdef: &str, tx: Rc<RefCell<Transaction>>) {
-        let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone()).unwrap(); // TODO
+    pub fn create_view(&self, vname: &str, vdef: &str, tx: Rc<RefCell<Transaction>>) -> Result<()> {
+        let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone())?;
         let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME, &layout);
-        ts.insert();
-        ts.set_string("viewname", vname.into()).unwrap();
-        ts.set_string("viewdef", vdef.into()).unwrap();
+        ts.insert()?;
+        ts.set_string("viewname", vname.into())?;
+        ts.set_string("viewdef", vdef.into())?;
+        Ok(())
     }
 
-    pub fn view_def(&self, vname: &str, tx: Rc<RefCell<Transaction>>) -> Option<String> {
-        let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone()).unwrap(); // TODO
+    pub fn view_def(&self, vname: &str, tx: Rc<RefCell<Transaction>>) -> Result<String> {
+        let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone())?;
         let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME, &layout);
-        while ts.next() {
+        while ts.next()? {
             if let Ok(vn) = ts.get_string("viewname") {
                 if vn == vname {
-                    return Some(ts.get_string("viewdef").unwrap());
+                    return Ok(ts.get_string("viewdef").unwrap());
                 }
             }
         }
-        None
+        Err(MetadataError::ViewNotFound(vname.into()))
     }
 }
 
@@ -70,12 +74,14 @@ mod tests {
                 let vm = ViewMgr::new(tm.clone());
                 vm.init(tx.clone());
 
-                vm.create_view("FirstView", "SELECT * FROM t", tx.clone());
+                vm.create_view("FirstView", "SELECT * FROM t", tx.clone())
+                    .unwrap();
                 vm.create_view(
                     "MyView",
                     "SELECT qty, price, qty*price AS value FROM t",
                     tx.clone(),
-                );
+                )
+                .unwrap();
 
                 let viewdef = vm.view_def("MyView", tx.clone()).unwrap();
                 assert_eq!(viewdef, "SELECT qty, price, qty*price AS value FROM t");

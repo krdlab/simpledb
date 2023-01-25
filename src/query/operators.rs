@@ -5,7 +5,7 @@
 
 use super::{
     predicate::{Constant, Predicate},
-    scan::{Scan, ScanError, UpdateScan},
+    scan::{Result, Scan, ScanError, UpdateScan},
 };
 
 // select operator
@@ -25,17 +25,17 @@ impl<S> Scan for SelectScan<S>
 where
     S: Scan,
 {
-    fn before_first(&mut self) {
-        self.scan.before_first();
+    fn before_first(&mut self) -> Result<()> {
+        self.scan.before_first()
     }
 
-    fn next(&mut self) -> bool {
-        while self.scan.next() {
+    fn next(&mut self) -> Result<bool> {
+        while self.scan.next()? {
             if self.pred.is_satisfied(&mut self.scan) {
-                return true;
+                return Ok(true);
             }
         }
-        return false;
+        return Ok(false);
     }
 
     fn get_i32(&self, field_name: &str) -> super::scan::Result<i32> {
@@ -109,11 +109,11 @@ impl<S> Scan for ProjectScan<S>
 where
     S: Scan,
 {
-    fn before_first(&mut self) {
-        self.scan.before_first();
+    fn before_first(&mut self) -> Result<()> {
+        self.scan.before_first()
     }
 
-    fn next(&mut self) -> bool {
+    fn next(&mut self) -> Result<bool> {
         self.scan.next()
     }
 
@@ -167,18 +167,19 @@ impl<S> Scan for ProductScan<S>
 where
     S: Scan,
 {
-    fn before_first(&mut self) {
-        self.scan1.before_first();
-        self.scan1.next();
-        self.scan2.before_first();
+    fn before_first(&mut self) -> Result<()> {
+        self.scan1.before_first()?;
+        self.scan1.next()?;
+        self.scan2.before_first()?;
+        Ok(())
     }
 
-    fn next(&mut self) -> bool {
-        if self.scan2.next() {
-            true
+    fn next(&mut self) -> Result<bool> {
+        if self.scan2.next()? {
+            Ok(true)
         } else {
-            self.scan2.before_first();
-            self.scan2.next() && self.scan1.next()
+            self.scan2.before_first()?;
+            Ok(self.scan2.next()? && self.scan1.next()?)
         }
     }
 
@@ -221,7 +222,7 @@ mod tests {
     use super::{ProductScan, ProjectScan, SelectScan};
     use crate::{
         query::{
-            predicate::{Constant, Term, Predicate, Expression},
+            predicate::{Constant, Expression, Predicate, Term},
             scan::Scan,
         },
         record::{
@@ -246,9 +247,9 @@ mod tests {
             let tx = db.new_tx();
             {
                 let mut s1 = TableScan::new(tx.clone(), "T", &layout);
-                s1.before_first();
+                s1.before_first().unwrap();
                 for i in 0..200 {
-                    s1.insert();
+                    s1.insert().unwrap();
                     s1.set_i32("A", i).unwrap();
                     s1.set_string("B", format!("rec{}", i)).unwrap();
                 }
@@ -261,11 +262,11 @@ mod tests {
 
                 let s3 = SelectScan::new(s2, pred);
                 let mut s4 = ProjectScan::new(s3, vec!["B".into()]);
-                s4.before_first();
+                s4.before_first().unwrap();
 
-                assert!(s4.next());
+                assert!(s4.next().unwrap());
                 assert_eq!(s4.get_string("B").unwrap(), "rec10");
-                assert!(!s4.next());
+                assert!(!s4.next().unwrap());
             }
             tx.borrow_mut().commit().unwrap();
         }
@@ -286,10 +287,10 @@ mod tests {
                 let layout1 = Layout::new(schema1);
                 {
                     let mut us1 = TableScan::new(tx.clone(), "T1", &layout1);
-                    us1.before_first();
+                    us1.before_first().unwrap();
 
                     for i in 0..200 {
-                        us1.insert();
+                        us1.insert().unwrap();
                         us1.set_i32("A", i).unwrap();
                         us1.set_string("B", format!("str{}", i)).unwrap();
                     }
@@ -301,9 +302,9 @@ mod tests {
                 let layout2 = Layout::new(schema2);
                 {
                     let mut us2 = TableScan::new(tx.clone(), "T2", &layout2);
-                    us2.before_first();
+                    us2.before_first().unwrap();
                     for i in 0..200 {
-                        us2.insert();
+                        us2.insert().unwrap();
                         let num = 200 - (i - 1);
                         us2.set_i32("C", num).unwrap();
                         us2.set_string("D", format!("str{}", num)).unwrap();
@@ -315,16 +316,14 @@ mod tests {
                     let s2 = TableScan::new(tx.clone(), "T2", &layout2);
                     let s3 = ProductScan::new(s1, s2);
 
-                    let t = Expression::new(
-                        Term::FieldName("A".into()),
-                        Term::FieldName("C".into()),
-                    );
+                    let t =
+                        Expression::new(Term::FieldName("A".into()), Term::FieldName("C".into()));
                     let pred = Predicate::new(t);
 
                     let s4 = SelectScan::new(s3, pred);
                     let mut s5 = ProjectScan::new(s4, vec!["B".into(), "D".into()]);
-                    s5.before_first();
-                    while s5.next() {
+                    s5.before_first().unwrap();
+                    while s5.next().unwrap() {
                         assert_eq!(s5.get_string("B").unwrap(), s5.get_string("D").unwrap());
                     }
                 }

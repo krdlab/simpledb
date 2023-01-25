@@ -3,8 +3,6 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use std::{cell::RefCell, rc::Rc};
-
 use super::{
     record_page::RecordPage,
     schema::{Layout, SqlType},
@@ -17,6 +15,7 @@ use crate::{
     },
     tx::transaction::Transaction,
 };
+use std::{cell::RefCell, rc::Rc};
 
 pub struct TableScan<'lm, 'bm, 'lt, 'ly> {
     tx: Rc<RefCell<Transaction<'lm, 'bm, 'lt>>>,
@@ -61,45 +60,47 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
         self.tx.borrow_mut().unpin(self.rp.block());
     }
 
-    fn move_to_block(&mut self, blknum: i64) {
+    fn move_to_block(&mut self, blknum: i64) -> Result<()> {
         self.close();
         let block = BlockId::new(&self.filename, blknum);
-        self.tx.borrow_mut().pin(&block).unwrap(); // TODO
+        self.tx.borrow_mut().pin(&block)?;
         self.rp = RecordPage::new(block, self.layout);
         self.current_slot = None;
+        Ok(())
     }
 
-    fn move_to_new_block(&mut self) {
+    fn move_to_new_block(&mut self) -> Result<()> {
         self.close();
         {
             let mut tx = self.tx.borrow_mut();
-            let block = tx.append(&self.filename).unwrap(); // TODO
-            tx.pin(&block).unwrap(); // TODO
+            let block = tx.append(&self.filename)?;
+            tx.pin(&block)?;
             self.rp = RecordPage::new(block, self.layout);
-            self.rp.format(&mut *tx).unwrap(); // TODO
+            self.rp.format(&mut *tx)?;
         }
         self.current_slot = None;
+        Ok(())
     }
 
-    pub fn before_first(&mut self) {
-        self.move_to_block(0);
+    pub fn before_first(&mut self) -> Result<()> {
+        self.move_to_block(0)
     }
 
     fn as_last_block(&self) -> bool {
         self.rp.block().number() as u64 == self.tx.borrow().size(&self.filename).unwrap() - 1
     }
 
-    pub fn next(&mut self) -> bool {
+    pub fn next(&mut self) -> Result<bool> {
         // let tx = self.tx.borrow();
         self.current_slot = self.rp.next_after(&self.tx.borrow(), self.current_slot);
         while self.current_slot.is_none() {
             if self.as_last_block() {
-                return false;
+                return Ok(false);
             }
-            self.move_to_block(self.rp.block().number() + 1);
+            self.move_to_block(self.rp.block().number() + 1)?;
             self.current_slot = self.rp.next_after(&self.tx.borrow(), self.current_slot);
         }
-        true
+        Ok(true)
     }
 
     pub fn get_i32(&self, fname: &str) -> Result<i32> {
@@ -147,20 +148,21 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
         }
     }
 
-    pub fn insert(&mut self) {
+    pub fn insert(&mut self) -> Result<()> {
         self.current_slot = self
             .rp
             .insert_after(&mut self.tx.borrow_mut(), self.current_slot);
         while self.current_slot.is_none() {
             if self.as_last_block() {
-                self.move_to_new_block();
+                self.move_to_new_block()?;
             } else {
-                self.move_to_block(self.rp.block().number() + 1);
+                self.move_to_block(self.rp.block().number() + 1)?;
             }
             self.current_slot = self
                 .rp
                 .insert_after(&mut self.tx.borrow_mut(), self.current_slot);
         }
+        Ok(())
     }
 
     pub fn delete(&mut self) -> Result<()> {
@@ -186,11 +188,11 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
 }
 
 impl<'tx, 'lm, 'bm, 'lt, 'ly> Scan for TableScan<'lm, 'bm, 'lt, 'ly> {
-    fn before_first(&mut self) {
-        TableScan::before_first(self);
+    fn before_first(&mut self) -> Result<()> {
+        TableScan::before_first(self)
     }
 
-    fn next(&mut self) -> bool {
+    fn next(&mut self) -> Result<bool> {
         TableScan::next(self)
     }
 
@@ -229,8 +231,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> UpdateScan for TableScan<'lm, 'bm, 'lt, 'ly> {
     }
 
     fn insert(&mut self) -> crate::query::scan::Result<()> {
-        TableScan::insert(self);
-        Ok(())
+        TableScan::insert(self)
     }
 
     fn delete(&mut self) -> crate::query::scan::Result<()> {
@@ -276,14 +277,14 @@ mod tests {
             {
                 let mut ts = TableScan::new(tx.clone(), "T", &layout);
                 for i in 0..50 {
-                    ts.insert();
+                    ts.insert().unwrap();
                     ts.set_i32("A", i).unwrap();
                     ts.set_string("B", format!("rec{i}")).unwrap();
                 }
 
                 let mut i = 0;
-                ts.before_first();
-                while ts.next() {
+                ts.before_first().unwrap();
+                while ts.next().unwrap() {
                     assert_eq!(ts.get_i32("A").unwrap(), i);
                     assert_eq!(ts.get_string("B").unwrap(), format!("rec{i}"));
                     i += 1;
@@ -291,15 +292,15 @@ mod tests {
                 assert_eq!(i, 50);
 
                 i = 1;
-                ts.before_first();
-                while ts.next() {
+                ts.before_first().unwrap();
+                while ts.next().unwrap() {
                     ts.delete().unwrap();
                     i += 2;
                 }
 
                 i = 0;
-                ts.before_first();
-                while ts.next() {
+                ts.before_first().unwrap();
+                while ts.next().unwrap() {
                     assert_eq!(ts.get_i32("A").unwrap(), i);
                     assert_eq!(ts.get_string("B").unwrap(), format!("rec{i}"));
                     i += 2;

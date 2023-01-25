@@ -3,6 +3,7 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use super::common::Result;
 use super::table_mgr::{TableMgr, TABLE_CATALOG_TABLE_NAME, TABLE_NAME_FIELD};
 use crate::{
     record::{schema::Layout, table_scan::TableScan},
@@ -52,28 +53,26 @@ pub struct StatMgr {
 }
 
 impl StatMgrData {
-    pub(crate) fn refresh_statistics(&mut self, tx: Rc<RefCell<Transaction>>) {
+    pub(crate) fn refresh_statistics(&mut self, tx: Rc<RefCell<Transaction>>) -> Result<()> {
         self.table_stats.clear();
         self.num_calls = 0;
 
         let mut table_names: Vec<String> = Vec::new();
         {
-            let layout = self
-                .tm
-                .layout(TABLE_CATALOG_TABLE_NAME, tx.clone())
-                .unwrap();
+            let layout = self.tm.layout(TABLE_CATALOG_TABLE_NAME, tx.clone())?;
             let mut tcat = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, &layout);
-            while tcat.next() {
+            while tcat.next()? {
                 let table_name = tcat.get_string(TABLE_NAME_FIELD).unwrap();
                 table_names.push(table_name);
             }
         }
         for table_name in table_names {
-            if let Some(layout) = self.tm.layout(&table_name, tx.clone()) {
-                let stats = StatMgrData::calc_table_stats(&table_name, &layout, tx.clone());
+            if let Ok(layout) = self.tm.layout(&table_name, tx.clone()) {
+                let stats = StatMgrData::calc_table_stats(&table_name, &layout, tx.clone())?;
                 self.table_stats.insert(table_name, stats);
             }
         }
+        Ok(())
     }
 
     pub(crate) fn get_or_create_table_stat_info(
@@ -81,35 +80,35 @@ impl StatMgrData {
         table_name: &str,
         layout: &Layout,
         tx: Rc<RefCell<Transaction>>,
-    ) -> StatInfo {
+    ) -> Result<StatInfo> {
         let si = match self.table_stats.entry(table_name.into()) {
             Entry::Occupied(e) => e.into_mut(),
             Entry::Vacant(ve) => {
-                let si = StatMgrData::calc_table_stats(table_name, layout, tx);
+                let si = StatMgrData::calc_table_stats(table_name, layout, tx)?;
                 ve.insert(si)
             }
         };
-        si.clone()
+        Ok(si.clone())
     }
 
     pub(crate) fn calc_table_stats(
         table_name: &str,
         layout: &Layout,
         tx: Rc<RefCell<Transaction>>,
-    ) -> StatInfo {
+    ) -> Result<StatInfo> {
         let mut num_records = 0;
         let mut num_blocks = 0;
 
         let mut ts = TableScan::new(tx, table_name.into(), layout);
-        while ts.next() {
+        while ts.next()? {
             num_records += 1;
             num_blocks = ts.current_rid().block_number() + 1;
         }
 
-        StatInfo {
+        Ok(StatInfo {
             num_blocks: num_blocks.try_into().unwrap(),
             num_records,
-        }
+        })
     }
 }
 
@@ -128,7 +127,7 @@ impl StatMgr {
 
     pub fn init(&self, tx: Rc<RefCell<Transaction>>) {
         let mut data = self.data.lock().unwrap();
-        data.refresh_statistics(tx);
+        data.refresh_statistics(tx).unwrap();
     }
 
     pub fn table_stat_info(
@@ -141,11 +140,12 @@ impl StatMgr {
 
         data.num_calls += 1;
         if data.num_calls > STATS_REFRESH_THRESHOLD {
-            data.refresh_statistics(tx.clone());
+            data.refresh_statistics(tx.clone()).unwrap();
         }
 
         // FIXME: If TableMgr has the specified table records, StatMgr should create a StatInfo. If not, should not create it.
         data.get_or_create_table_stat_info(table_name, layout, tx.clone())
+            .unwrap() // TODO
     }
 }
 

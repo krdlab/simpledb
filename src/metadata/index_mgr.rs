@@ -4,6 +4,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::{
+    common::Result,
     stat_mgr::{StatInfo, StatMgr},
     table_mgr::{TableMgr, MAX_NAME_LENGTH},
 };
@@ -123,7 +124,9 @@ impl IndexMgr {
         schema.add_string_field("indexname", MAX_NAME_LENGTH);
         schema.add_string_field("tablename", MAX_NAME_LENGTH);
         schema.add_string_field("fieldname", MAX_NAME_LENGTH);
-        self.tm.create_table(INDEX_CATALOG_TABLE_NAME, schema, tx);
+        self.tm
+            .create_table(INDEX_CATALOG_TABLE_NAME, schema, tx)
+            .unwrap();
     }
 
     pub fn create_index(
@@ -132,16 +135,17 @@ impl IndexMgr {
         table_name: &str,
         field_name: &str,
         tx: Rc<RefCell<Transaction>>,
-    ) {
-        let layout = self.index_catalog_layout(&tx).unwrap();
+    ) -> Result<()> {
+        let layout = self.index_catalog_layout(&tx)?;
         let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, &layout);
-        ts.insert();
-        ts.set_string("indexname", index_name.into()).unwrap();
-        ts.set_string("tablename", table_name.into()).unwrap();
-        ts.set_string("fieldname", field_name.into()).unwrap();
+        ts.insert()?;
+        ts.set_string("indexname", index_name.into())?;
+        ts.set_string("tablename", table_name.into())?;
+        ts.set_string("fieldname", field_name.into())?;
+        Ok(())
     }
 
-    fn index_catalog_layout(&self, tx: &Rc<RefCell<Transaction>>) -> Option<Layout> {
+    fn index_catalog_layout(&self, tx: &Rc<RefCell<Transaction>>) -> Result<Layout> {
         self.tm.layout(INDEX_CATALOG_TABLE_NAME, tx.clone())
     }
 
@@ -149,16 +153,16 @@ impl IndexMgr {
         &self,
         table_name: &str,
         tx: Rc<RefCell<Transaction>>,
-    ) -> HashMap<String, IndexInfo> {
+    ) -> Result<HashMap<String, IndexInfo>> {
         let mut result = HashMap::new();
 
         let idx_fld_pairs = {
             let tblname: String = table_name.into();
             let mut names = Vec::new();
 
-            let layout = self.index_catalog_layout(&tx).unwrap();
+            let layout = self.index_catalog_layout(&tx)?;
             let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME, &layout);
-            while ts.next() {
+            while ts.next()? {
                 if ts.get_string("tablename").unwrap() == tblname {
                     names.push((
                         ts.get_string("indexname").unwrap(),
@@ -183,7 +187,7 @@ impl IndexMgr {
             result.insert(fldname, index_info);
         }
 
-        result
+        Ok(result)
     }
 }
 
@@ -212,14 +216,15 @@ mod tests {
                 {
                     let mut schema = Schema::new();
                     schema.add_i32_field("id");
-                    tm.create_table("MyTable", schema, tx.clone());
+                    tm.create_table("MyTable", schema, tx.clone()).unwrap();
                 }
 
                 let im = IndexMgr::new(tm.clone(), sm.clone());
                 im.init(tx.clone());
-                im.create_index("my-index", "MyTable", "id", tx.clone());
+                im.create_index("my-index", "MyTable", "id", tx.clone())
+                    .unwrap();
 
-                let ii_map = im.index_info("MyTable", tx.clone());
+                let ii_map = im.index_info("MyTable", tx.clone()).unwrap();
                 assert_eq!(ii_map.len(), 1);
 
                 let id = ii_map.get("id").unwrap();

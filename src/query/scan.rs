@@ -23,8 +23,8 @@ pub enum ScanError {
 pub type Result<T> = core::result::Result<T, ScanError>;
 
 pub trait Scan {
-    fn before_first(&mut self);
-    fn next(&mut self) -> bool;
+    fn before_first(&mut self) -> Result<()>;
+    fn next(&mut self) -> Result<bool>;
     fn get_i32(&self, field_name: &str) -> Result<i32>;
     fn get_string(&self, field_name: &str) -> Result<String>;
     fn get_val(&self, field_name: &str) -> Result<Constant>;
