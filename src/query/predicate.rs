@@ -202,6 +202,9 @@ impl Predicate {
 
 #[cfg(test)]
 mod tests {
+    use super::Term;
+    use crate::{query::predicate::Expression, record::schema::Schema};
+
     #[test]
     fn test_constant_partialeq() {
         use super::Constant::*;
@@ -222,12 +225,46 @@ mod tests {
 
     #[test]
     fn test_term() {
-        // NOTE: see: operators::tests
+        use super::Constant::*;
+
+        let mut schema = Schema::new();
+        schema.add_i32_field("A");
+
+        {
+            let t = Term::Constant(Int(1));
+            assert!(!t.is_field_name());
+            assert!(t.apply_to(&schema));
+        }
+        {
+            let t = Term::FieldName("A".into());
+            assert!(t.is_field_name());
+            assert!(t.apply_to(&schema));
+        }
+        {
+            let t = Term::FieldName("B".into());
+            assert!(!t.apply_to(&schema));
+        }
     }
 
     #[test]
     fn test_expression() {
-        // NOTE: see: operators::tests
+        use super::Constant::*;
+        {
+            let t1 = Term::FieldName("A".into());
+            let t2 = Term::Constant(Int(1));
+            let expr = Expression::new(t1, t2);
+
+            assert_eq!(expr.equates_with_constant("A"), Some(Int(1)));
+            assert_eq!(expr.equates_with_field("A"), None);
+        }
+        {
+            let t1 = Term::FieldName("A".into());
+            let t2 = Term::FieldName("B".into());
+            let expr = Expression::new(t1, t2);
+
+            assert_eq!(expr.equates_with_constant("A"), None);
+            assert_eq!(expr.equates_with_field("A"), Some("B".into()));
+        }
     }
 
     #[test]
