@@ -10,8 +10,9 @@ fn main() {
     let curr_dir = env::current_dir().unwrap();
     let mut db = SimpleDB::new(&curr_dir.join("db"), 400, 8);
     db.init();
-
-    let mut tx = db.new_tx();
-    tx.rollback().unwrap();
+    {
+        let tx = db.new_tx();
+        tx.borrow_mut().rollback().unwrap();
+    }
     println!("OK");
 }

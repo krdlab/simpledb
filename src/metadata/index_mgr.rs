@@ -4,6 +4,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::{
+    common::Result,
     stat_mgr::{StatInfo, StatMgr},
     table_mgr::{TableMgr, MAX_NAME_LENGTH},
 };
@@ -14,25 +15,25 @@ use crate::{
     },
     tx::transaction::Transaction,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 /* FIXME: begin draft implementations */
 pub trait Index {}
 struct HashIndex<'ly> {
-    index_name: String,
-    layout: &'ly Layout,
+    _index_name: String,
+    _layout: &'ly Layout,
 }
 impl<'ly> HashIndex<'ly> {
     const NUM_BUCKETS: usize = 100;
 
     pub fn new(index_name: impl Into<String>, layout: &'ly Layout) -> Self {
         Self {
-            index_name: index_name.into(),
-            layout,
+            _index_name: index_name.into(),
+            _layout: layout,
         }
     }
 
-    pub fn search_cost(num_blocks: usize, rec_per_blk: usize) -> usize {
+    pub fn search_cost(num_blocks: usize, _rec_per_blk: usize) -> usize {
         num_blocks / HashIndex::NUM_BUCKETS
     }
 }
@@ -42,7 +43,7 @@ impl<'ly> Index for HashIndex<'ly> {}
 pub struct IndexInfo {
     index_name: String,
     field_name: String,
-    table_schema: Schema,
+    _table_schema: Schema,
     block_size: usize,
     index_layout: Layout,
     stat_info: StatInfo,
@@ -60,7 +61,7 @@ impl IndexInfo {
         Self {
             index_name: index_name.into(),
             field_name: field_name.into(),
-            table_schema,
+            _table_schema: table_schema,
             block_size,
             index_layout,
             stat_info,
@@ -108,26 +109,24 @@ impl IndexInfo {
 const INDEX_CATALOG_TABLE_NAME: &str = "idxcat";
 
 pub struct IndexMgr {
-    layout: Layout,
+    // layout: Layout,
     tm: Arc<TableMgr>,
     sm: Arc<StatMgr>,
 }
 
 impl IndexMgr {
-    pub fn new(is_new: bool, tm: Arc<TableMgr>, sm: Arc<StatMgr>, tx: &mut Transaction) -> Self {
-        if is_new {
-            let mut schema = Schema::new();
-            schema.add_string_field("indexname", MAX_NAME_LENGTH);
-            schema.add_string_field("tablename", MAX_NAME_LENGTH);
-            schema.add_string_field("fieldname", MAX_NAME_LENGTH);
-            tm.create_table(INDEX_CATALOG_TABLE_NAME, schema, tx);
-        }
+    pub fn new(tm: Arc<TableMgr>, sm: Arc<StatMgr>) -> Self {
+        Self { tm, sm }
+    }
 
-        Self {
-            layout: tm.layout(INDEX_CATALOG_TABLE_NAME, tx).unwrap(),
-            tm,
-            sm,
-        }
+    pub fn init(&self, tx: Rc<RefCell<Transaction>>) {
+        let mut schema = Schema::new();
+        schema.add_string_field("indexname", MAX_NAME_LENGTH);
+        schema.add_string_field("tablename", MAX_NAME_LENGTH);
+        schema.add_string_field("fieldname", MAX_NAME_LENGTH);
+        self.tm
+            .create_table(INDEX_CATALOG_TABLE_NAME, schema, tx)
+            .unwrap();
     }
 
     pub fn create_index(
@@ -135,26 +134,40 @@ impl IndexMgr {
         index_name: &str,
         table_name: &str,
         field_name: &str,
-        tx: &mut Transaction,
-    ) {
-        let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, &self.layout);
-        ts.insert();
-        ts.set_string("indexname", index_name.into());
-        ts.set_string("tablename", table_name.into());
-        ts.set_string("fieldname", field_name.into());
+        tx: Rc<RefCell<Transaction>>,
+    ) -> Result<()> {
+        let layout = self.index_catalog_layout(&tx)?;
+        let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, &layout);
+        ts.insert()?;
+        ts.set_string("indexname", index_name.into())?;
+        ts.set_string("tablename", table_name.into())?;
+        ts.set_string("fieldname", field_name.into())?;
+        Ok(())
     }
 
-    pub fn index_info(&self, table_name: &str, tx: &mut Transaction) -> HashMap<String, IndexInfo> {
+    fn index_catalog_layout(&self, tx: &Rc<RefCell<Transaction>>) -> Result<Layout> {
+        self.tm.layout(INDEX_CATALOG_TABLE_NAME, tx.clone())
+    }
+
+    pub fn index_info(
+        &self,
+        table_name: &str,
+        tx: Rc<RefCell<Transaction>>,
+    ) -> Result<HashMap<String, IndexInfo>> {
         let mut result = HashMap::new();
 
         let idx_fld_pairs = {
             let tblname: String = table_name.into();
             let mut names = Vec::new();
 
-            let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, &self.layout);
-            while ts.next() {
-                if ts.get_string("tablename") == tblname {
-                    names.push((ts.get_string("indexname"), ts.get_string("fieldname")));
+            let layout = self.index_catalog_layout(&tx)?;
+            let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME, &layout);
+            while ts.next()? {
+                if ts.get_string("tablename").unwrap() == tblname {
+                    names.push((
+                        ts.get_string("indexname").unwrap(),
+                        ts.get_string("fieldname").unwrap(),
+                    ));
                 }
             }
 
@@ -162,19 +175,19 @@ impl IndexMgr {
         };
 
         for (idxname, fldname) in idx_fld_pairs {
-            let tbl_layout = self.tm.layout(table_name, tx).unwrap();
-            let tbl_stat_info = self.sm.table_stat_info(table_name, &tbl_layout, tx);
+            let tbl_layout = self.tm.layout(table_name, tx.clone()).unwrap();
+            let tbl_stat_info = self.sm.table_stat_info(table_name, &tbl_layout, tx.clone());
             let index_info = IndexInfo::new(
                 &idxname,
                 &fldname,
                 tbl_layout.schema().clone(),
-                tx.block_size(),
+                tx.borrow().block_size(),
                 tbl_stat_info,
             );
             result.insert(fldname, index_info);
         }
 
-        result
+        Ok(result)
     }
 }
 
@@ -194,28 +207,30 @@ mod tests {
         let dir = tempdir().unwrap();
         {
             let db = SimpleDB::new_for_test(dir.path(), "index_mgr_test.log");
-            let mut tx = db.new_tx();
+            let tx = db.new_tx();
             {
                 let tm = Arc::new(TableMgr::new());
-                tm.init(&mut tx);
+                tm.init(tx.clone());
                 let sm = Arc::new(StatMgr::new(tm.clone()));
-                sm.init(&mut tx);
+                sm.init(tx.clone());
                 {
                     let mut schema = Schema::new();
                     schema.add_i32_field("id");
-                    tm.create_table("MyTable", schema, &mut tx);
+                    tm.create_table("MyTable", schema, tx.clone()).unwrap();
                 }
 
-                let im = IndexMgr::new(true, tm.clone(), sm.clone(), &mut tx);
-                im.create_index("my-index", "MyTable", "id", &mut tx);
+                let im = IndexMgr::new(tm.clone(), sm.clone());
+                im.init(tx.clone());
+                im.create_index("my-index", "MyTable", "id", tx.clone())
+                    .unwrap();
 
-                let ii_map = im.index_info("MyTable", &mut tx);
+                let ii_map = im.index_info("MyTable", tx.clone()).unwrap();
                 assert_eq!(ii_map.len(), 1);
 
                 let id = ii_map.get("id").unwrap();
                 assert_eq!(id.index_name, "my-index");
             }
-            tx.commit().unwrap();
+            tx.borrow_mut().commit().unwrap();
         }
     }
 }

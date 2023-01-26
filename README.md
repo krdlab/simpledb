@@ -12,7 +12,7 @@
 - [x] Transaction Management
 - [x] Record Management
 - [x] Metadata Management
-- [ ] Query Processing
+- [x] Query Processing
 - [ ] Parsing
 - [ ] Planning
 - [ ] JDBC Interfaces

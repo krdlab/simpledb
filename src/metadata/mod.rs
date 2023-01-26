@@ -3,6 +3,7 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+pub(crate) mod common;
 pub mod index_mgr;
 pub mod metadata_mgr;
 pub mod stat_mgr;

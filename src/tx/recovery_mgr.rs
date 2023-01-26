@@ -460,14 +460,14 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
     }
 
     pub fn set_i32(&mut self, buff: &mut Buffer, offset: usize, _newval: i32) -> Result<LSN> {
-        let oldval = buff.contents().get_i32(offset)?;
+        let oldval = buff.contents_as_mut().get_i32(offset)?;
         let blk = buff.block().as_ref().unwrap();
         let lsn = SetIntRecord::write_to_log(self.lm.clone(), self.txnum, blk, offset, oldval)?;
         Ok(lsn)
     }
 
     pub fn set_string(&self, buff: &mut Buffer, offset: usize, _newval: &str) -> Result<LSN> {
-        let oldval = buff.contents().get_string(offset)?;
+        let oldval = buff.contents_as_mut().get_string(offset)?;
         let blk = buff.block().as_ref().unwrap();
         let lsn = SetStringRecord::write_to_log(self.lm.clone(), self.txnum, blk, offset, oldval)?;
         Ok(lsn)
@@ -552,22 +552,30 @@ mod tests {
     }
 
     fn test_initialize(ctx: &mut Context) {
-        let mut tx1 = ctx.db.new_tx();
-        let mut tx2 = ctx.db.new_tx();
-        tx1.pin(&ctx.block0).unwrap();
-        tx2.pin(&ctx.block1).unwrap();
+        let tx1 = ctx.db.new_tx();
+        let tx2 = ctx.db.new_tx();
+        tx1.borrow_mut().pin(&ctx.block0).unwrap();
+        tx2.borrow_mut().pin(&ctx.block1).unwrap();
 
         let mut pos = 0;
         for _i in 0..6 {
-            tx1.set_i32(&ctx.block0, pos, pos as i32, false).unwrap();
-            tx2.set_i32(&ctx.block1, pos, pos as i32, false).unwrap();
+            tx1.borrow_mut()
+                .set_i32(&ctx.block0, pos, pos as i32, false)
+                .unwrap();
+            tx2.borrow_mut()
+                .set_i32(&ctx.block1, pos, pos as i32, false)
+                .unwrap();
             pos += I32_BYTE_SIZE as usize;
         }
 
-        tx1.set_string(&ctx.block0, 30, "abc", false).unwrap();
-        tx2.set_string(&ctx.block1, 30, "def", false).unwrap();
-        tx1.commit().unwrap();
-        tx2.commit().unwrap();
+        tx1.borrow_mut()
+            .set_string(&ctx.block0, 30, "abc", false)
+            .unwrap();
+        tx2.borrow_mut()
+            .set_string(&ctx.block1, 30, "def", false)
+            .unwrap();
+        tx1.borrow_mut().commit().unwrap();
+        tx2.borrow_mut().commit().unwrap();
 
         assert_fm_values(
             &ctx,
@@ -577,24 +585,30 @@ mod tests {
     }
 
     fn test_modify(ctx: &Context) {
-        let mut tx3 = ctx.db.new_tx();
-        let mut tx4 = ctx.db.new_tx();
+        let tx3 = ctx.db.new_tx();
+        let tx4 = ctx.db.new_tx();
 
-        tx3.pin(&ctx.block0).unwrap();
-        tx4.pin(&ctx.block1).unwrap();
+        tx3.borrow_mut().pin(&ctx.block0).unwrap();
+        tx4.borrow_mut().pin(&ctx.block1).unwrap();
 
         let mut pos = 0;
         for _i in 0..6 {
-            tx3.set_i32(&ctx.block0, pos, pos as i32 + 100, true)
+            tx3.borrow_mut()
+                .set_i32(&ctx.block0, pos, pos as i32 + 100, true)
                 .unwrap();
-            tx4.set_i32(&ctx.block1, pos, pos as i32 + 100, true)
+            tx4.borrow_mut()
+                .set_i32(&ctx.block1, pos, pos as i32 + 100, true)
                 .unwrap();
             pos += I32_BYTE_SIZE as usize;
         }
-        tx3.set_string(&ctx.block0, 30, "uvw", true).unwrap();
-        tx4.set_string(&ctx.block1, 30, "xyz", true).unwrap();
-        ctx.bm.flush_all(tx3.txnum()).unwrap();
-        ctx.bm.flush_all(tx4.txnum()).unwrap();
+        tx3.borrow_mut()
+            .set_string(&ctx.block0, 30, "uvw", true)
+            .unwrap();
+        tx4.borrow_mut()
+            .set_string(&ctx.block1, 30, "xyz", true)
+            .unwrap();
+        ctx.bm.flush_all(tx3.borrow().txnum()).unwrap();
+        ctx.bm.flush_all(tx4.borrow().txnum()).unwrap();
         assert_fm_values(
             &ctx,
             [
@@ -604,7 +618,7 @@ mod tests {
             ["uvw", "xyz"],
         );
 
-        tx3.rollback().unwrap();
+        tx3.borrow_mut().rollback().unwrap();
         assert_fm_values(
             &ctx,
             [[0, 4, 8, 12, 16, 20], [100, 104, 108, 112, 116, 120]],
@@ -613,9 +627,9 @@ mod tests {
     }
 
     fn test_recover(ctx: &mut Context) {
-        let mut tx = ctx.db.new_tx();
+        let tx = ctx.db.new_tx();
         print_fm_values(ctx, &ctx.block1);
-        tx.recover().unwrap();
+        tx.borrow_mut().recover().unwrap();
         print_fm_values(ctx, &ctx.block1);
         assert_fm_values(
             &ctx,
