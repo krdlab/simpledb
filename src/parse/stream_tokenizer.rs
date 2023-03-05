@@ -141,6 +141,15 @@ impl From<State> for TT {
     }
 }
 
+impl PartialEq<char> for TT {
+    fn eq(&self, other: &char) -> bool {
+        match self {
+            TT::Any(ch) => *ch == *other,
+            _ => false,
+        }
+    }
+}
+
 impl PartialEq<TT> for State {
     fn eq(&self, other: &TT) -> bool {
         match self {
@@ -210,7 +219,7 @@ impl<'s> StreamTokenizer<'s> {
         s
     }
 
-    fn word_chars(&mut self, low: char, hi: char) {
+    pub fn word_chars(&mut self, low: char, hi: char) {
         let mut i = low as usize;
         while i <= hi as usize {
             self.ctype[i] |= CT::ALPHA;
