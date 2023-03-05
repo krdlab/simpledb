@@ -474,7 +474,7 @@ impl<'s> StreamTokenizer<'s> {
                     _c
                 } else {
                     panic!("TODO")
-                }; // TODO
+                };
                 i += 1;
             }
 
@@ -556,19 +556,6 @@ mod tests {
         t.ordinary_char('.');
         t.lower_case_mode(true);
 
-        /* output of java
-        ttype = -3, nval = 0.0, sval = select
-        ttype = -3, nval = 0.0, sval = name
-        ttype = -3, nval = 0.0, sval = from
-        ttype = -3, nval = 0.0, sval = test
-        ttype = 46, nval = 0.0, sval = null
-        ttype = -3, nval = 0.0, sval = users
-        ttype = -3, nval = 0.0, sval = where
-        ttype = -3, nval = 0.0, sval = id
-        ttype = 61, nval = 0.0, sval = null
-        ttype = -2, nval = 1.0, sval = null
-        */
-
         assert_eq!(*t.next_token().unwrap(), TT::Word);
         assert_eq!(t.sval().unwrap(), "select");
 
@@ -601,4 +588,50 @@ mod tests {
 
         assert_eq!(*t.next_token().unwrap(), TT::EOF);
     }
+
+    #[test]
+    fn test_number() {
+        let s = "1".into();
+        let mut t = StreamTokenizer::new(s);
+        t.ordinary_char('.');
+        t.lower_case_mode(true);
+
+        assert_eq!(*t.next_token().unwrap(), TT::Number);
+        assert_eq!(t.nval().unwrap(), 1.0);
+
+        assert_eq!(*t.next_token().unwrap(), TT::EOF);
+    }
+
+    #[test]
+    fn test_word() {
+        let s = "a".into();
+        let mut t = StreamTokenizer::new(s);
+        t.ordinary_char('.');
+        t.lower_case_mode(true);
+
+        assert_eq!(*t.next_token().unwrap(), TT::Word);
+        assert_eq!(t.sval().unwrap(), "a");
+
+        assert_eq!(*t.next_token().unwrap(), TT::EOF);
+    }
+
+    #[test]
+    fn test_empty() {
+        let s = "".into();
+        let mut t = StreamTokenizer::new(s);
+        t.ordinary_char('.');
+        t.lower_case_mode(true);
+
+        assert_eq!(*t.next_token().unwrap(), TT::EOF);
+    }
+
+    // #[test]
+    // fn test_escape() {
+    //     let s = r"\b\f\n\r\t".into();
+    //     let mut t = StreamTokenizer::new(s);
+    //     t.ordinary_char('.');
+    //     t.lower_case_mode(true);
+
+    //     assert_eq!(*t.next_token().unwrap(), TT::EOF);
+    // }
 }
