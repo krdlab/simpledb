@@ -6,13 +6,13 @@
 use super::stream_tokenizer::{StreamTokenizer, TT};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub enum LexerError {
     #[error("Bad syntax")]
     BadSyntax,
 }
 
-type Result<T> = core::result::Result<T, LexerError>;
+pub type Result<T> = core::result::Result<T, LexerError>;
 
 pub(crate) struct Lexer<'s> {
     keywords: Vec<&'static str>,

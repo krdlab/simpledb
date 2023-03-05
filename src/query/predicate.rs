@@ -15,7 +15,7 @@ pub enum Constant {
     String(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Term {
     Constant(Constant),
     FieldName(String),
@@ -44,7 +44,7 @@ impl Term {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Expression {
     lhs: Term,
     rhs: Term,
@@ -115,7 +115,7 @@ impl Display for Expression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Predicate {
     exprs: Vec<Expression>,
 }
@@ -127,6 +127,10 @@ impl Predicate {
 
     pub fn new(t: Expression) -> Self {
         Self { exprs: vec![t] }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.exprs.is_empty()
     }
 
     pub fn conjoin_with(&mut self, mut pred: Predicate) {
@@ -197,6 +201,13 @@ impl Predicate {
             }
         }
         None
+    }
+}
+
+impl Display for Predicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: Vec<String> = self.exprs.iter().map(|e| e.to_string()).collect();
+        write!(f, "{}", s.join(" and "))
     }
 }
 
