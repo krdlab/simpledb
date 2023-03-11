@@ -91,6 +91,7 @@ name = "simpledb"
 version = "0.1.0"
 dependencies = [
  "array-macro",
+ "bitflags",
  "byte",
  "tempfile",
  "thiserror",
