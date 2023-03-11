@@ -13,7 +13,7 @@
 - [x] Record Management
 - [x] Metadata Management
 - [x] Query Processing
-- [ ] Parsing
+- [x] Parsing
 - [ ] Planning
 - [ ] JDBC Interfaces
 - [ ] Indexing
