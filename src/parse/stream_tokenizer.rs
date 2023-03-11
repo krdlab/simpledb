@@ -479,11 +479,7 @@ impl<'s> StreamTokenizer<'s> {
                 if i >= self.buf.len() {
                     self.extend_buf();
                 }
-                self.buf[i] = if let State::Char(_c) = c {
-                    _c
-                } else {
-                    panic!("TODO")
-                };
+                self.buf[i] = c.char().unwrap();
                 i += 1;
             }
 
@@ -558,12 +554,16 @@ impl<'s> StreamTokenizer<'s> {
 mod tests {
     use super::{StreamTokenizer, TT};
 
-    #[test]
-    fn test() {
-        let s = "select name from test.users where id = 1".into();
-        let mut t = StreamTokenizer::new(s);
+    fn create_tokenizer(input: &str) -> StreamTokenizer {
+        let mut t = StreamTokenizer::new(input);
         t.ordinary_char('.');
         t.lower_case_mode(true);
+        t
+    }
+
+    #[test]
+    fn test() {
+        let mut t = create_tokenizer("select name from test.users where id = 1");
 
         assert_eq!(*t.next_token().unwrap(), TT::Word);
         assert_eq!(t.sval().unwrap(), "select");
@@ -600,10 +600,7 @@ mod tests {
 
     #[test]
     fn test_number() {
-        let s = "1".into();
-        let mut t = StreamTokenizer::new(s);
-        t.ordinary_char('.');
-        t.lower_case_mode(true);
+        let mut t = create_tokenizer("1");
 
         assert_eq!(*t.next_token().unwrap(), TT::Number);
         assert_eq!(t.nval().unwrap(), 1.0);
@@ -613,10 +610,7 @@ mod tests {
 
     #[test]
     fn test_word() {
-        let s = "a".into();
-        let mut t = StreamTokenizer::new(s);
-        t.ordinary_char('.');
-        t.lower_case_mode(true);
+        let mut t = create_tokenizer("a");
 
         assert_eq!(*t.next_token().unwrap(), TT::Word);
         assert_eq!(t.sval().unwrap(), "a");
@@ -626,21 +620,15 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        let s = "".into();
-        let mut t = StreamTokenizer::new(s);
-        t.ordinary_char('.');
-        t.lower_case_mode(true);
+        let mut t = create_tokenizer("");
 
         assert_eq!(*t.next_token().unwrap(), TT::EOF);
     }
 
-    // #[test]
-    // fn test_escape() {
-    //     let s = r"\b\f\n\r\t".into();
-    //     let mut t = StreamTokenizer::new(s);
-    //     t.ordinary_char('.');
-    //     t.lower_case_mode(true);
+    #[test]
+    fn test_escape() {
+        let mut t = create_tokenizer("\n\r\t");
 
-    //     assert_eq!(*t.next_token().unwrap(), TT::EOF);
-    // }
+        assert_eq!(*t.next_token().unwrap(), TT::EOF);
+    }
 }
