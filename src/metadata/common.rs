@@ -3,9 +3,8 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-use thiserror::Error;
-
 use crate::query::scan::ScanError;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum MetadataError {

@@ -8,6 +8,7 @@ use crate::{
     file::file_mgr::FileMgr,
     log_mgr::LogMgr,
     metadata::metadata_mgr::MetadataMgr,
+    plan::planner::{BasicQueryPlanner, BasicUpdatePlanner, Planner},
     tx::{
         lock_table::LockTable,
         transaction::{Transaction, TxNumber},
@@ -21,7 +22,8 @@ pub struct SimpleDB<'lm, 'bm> {
     bm: Arc<BufferMgr<'bm, 'lm>>,
     tn: TxNumber,
     lt: Arc<LockTable>,
-    mm: Option<MetadataMgr>,
+    mm: Option<Arc<MetadataMgr>>,
+    planner: Option<Arc<Planner<BasicQueryPlanner, BasicUpdatePlanner>>>,
 }
 
 impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
@@ -42,6 +44,7 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
             tn,
             lt,
             mm: None,
+            planner: None,
         }
     }
 
@@ -62,6 +65,7 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
             tn,
             lt,
             mm: None,
+            planner: None,
         }
     }
 
@@ -69,10 +73,17 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         let is_new = self.fm.is_new();
 
         let tx = self.new_tx();
-        let mm = MetadataMgr::new(is_new, tx.clone());
+
+        let mm = Arc::new(MetadataMgr::new(is_new, tx.clone()));
+
+        let qp = BasicQueryPlanner::new(mm.clone());
+        let up = BasicUpdatePlanner::new(mm.clone());
+        let planner = Arc::new(Planner::new(qp, up));
+
         tx.borrow_mut().commit().unwrap();
 
         self.mm = Some(mm);
+        self.planner = Some(planner);
     }
 
     pub fn new_tx(&self) -> Rc<RefCell<Transaction<'lm, 'bm>>> {
@@ -97,7 +108,11 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         self.bm.clone()
     }
 
-    pub fn metadata_mgr(&self) -> &MetadataMgr {
-        self.mm.as_ref().unwrap()
+    pub fn metadata_mgr(&self) -> Arc<MetadataMgr> {
+        self.mm.as_ref().unwrap().clone()
+    }
+
+    pub fn planner(&self) -> Arc<Planner<BasicQueryPlanner, BasicUpdatePlanner>> {
+        self.planner.as_ref().unwrap().clone()
     }
 }

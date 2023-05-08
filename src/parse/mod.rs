@@ -3,7 +3,7 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-mod data;
-mod lexer;
-mod parser;
+pub mod data;
+pub mod lexer;
+pub mod parser;
 mod stream_tokenizer;

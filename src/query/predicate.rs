@@ -61,7 +61,7 @@ impl Expression {
         lval == rval
     }
 
-    pub fn reduction_factor(&self, p: &Box<dyn Plan>) -> usize {
+    pub fn reduction_factor<'p>(&self, p: &Box<dyn Plan + 'p>) -> usize {
         todo!()
     }
 
@@ -144,7 +144,7 @@ impl Predicate {
         true
     }
 
-    pub fn reduction_factor(&self, p: &Box<dyn Plan>) -> usize {
+    pub fn reduction_factor<'p>(&self, p: &Box<dyn Plan + 'p>) -> usize {
         let mut factor = 1;
         for e in self.exprs.iter() {
             factor *= e.reduction_factor(p);

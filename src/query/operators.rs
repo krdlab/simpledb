@@ -180,7 +180,9 @@ pub struct ProductScan<'s> {
 
 impl<'s> ProductScan<'s> {
     pub fn new(scan1: Box<dyn UpdateScan + 's>, scan2: Box<dyn UpdateScan + 's>) -> Self {
-        Self { scan1, scan2 }
+        let mut this = Self { scan1, scan2 };
+        this.before_first().unwrap(); // TODO
+        this
     }
 }
 

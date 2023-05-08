@@ -16,7 +16,7 @@ use crate::{
     },
     tx::transaction::Transaction,
 };
-use std::{cell::RefCell, cmp::min, rc::Rc};
+use std::{cell::RefCell, cmp::min, rc::Rc, sync::Arc};
 
 pub trait Plan {
     fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's>;
@@ -34,10 +34,10 @@ pub struct TablePlan<'lm, 'bm> {
 }
 
 impl<'lm, 'bm> TablePlan<'lm, 'bm> {
-    pub fn new(
+    pub fn new<'m>(
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
         table_name: &str,
-        meta_mgr: &MetadataMgr,
+        meta_mgr: Arc<MetadataMgr>,
     ) -> Self {
         let layout = meta_mgr.table_layout(table_name, tx.clone()).unwrap(); // FIXME:
         let stat_info = meta_mgr.table_stat_info(table_name, layout.clone(), tx.clone());
@@ -76,18 +76,18 @@ impl<'lm, 'bm> Plan for TablePlan<'lm, 'bm> {
     }
 }
 
-pub struct SelectPlan {
-    plan: Box<dyn Plan>,
+pub struct SelectPlan<'p> {
+    plan: Box<dyn Plan + 'p>,
     pred: Predicate,
 }
 
-impl SelectPlan {
-    pub fn new(plan: Box<dyn Plan>, pred: Predicate) -> Self {
+impl<'p> SelectPlan<'p> {
+    pub fn new(plan: Box<dyn Plan + 'p>, pred: Predicate) -> Self {
         Self { plan, pred }
     }
 }
 
-impl Plan for SelectPlan {
+impl<'p> Plan for SelectPlan<'p> {
     fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
         let s = self.plan.open();
         Box::new(SelectScan::new(s, self.pred.clone()))
@@ -120,13 +120,13 @@ impl Plan for SelectPlan {
     }
 }
 
-pub struct ProjectPlan {
-    plan: Box<dyn Plan>,
+pub struct ProjectPlan<'p> {
+    plan: Box<dyn Plan + 'p>,
     schema: Schema,
 }
 
-impl ProjectPlan {
-    pub fn new(plan: Box<dyn Plan>, fields: Vec<&str>) -> Self {
+impl<'p> ProjectPlan<'p> {
+    pub fn new(plan: Box<dyn Plan + 'p>, fields: Vec<&str>) -> Self {
         let ps = plan.schema();
         let mut schema = Schema::new();
         for f in fields {
@@ -136,7 +136,7 @@ impl ProjectPlan {
     }
 }
 
-impl Plan for ProjectPlan {
+impl<'p> Plan for ProjectPlan<'p> {
     fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
         let scan = self.plan.open();
         let fields: Vec<String> = self.schema.fields_iter().map(|f| f.into()).collect();
@@ -160,14 +160,14 @@ impl Plan for ProjectPlan {
     }
 }
 
-pub struct ProductPlan {
-    plan1: Box<dyn Plan>,
-    plan2: Box<dyn Plan>,
+pub struct ProductPlan<'p1, 'p2> {
+    plan1: Box<dyn Plan + 'p1>,
+    plan2: Box<dyn Plan + 'p2>,
     schema: Schema,
 }
 
-impl ProductPlan {
-    pub fn new(plan1: Box<dyn Plan>, plan2: Box<dyn Plan>) -> Self {
+impl<'p1, 'p2> ProductPlan<'p1, 'p2> {
+    pub fn new(plan1: Box<dyn Plan + 'p1>, plan2: Box<dyn Plan + 'p2>) -> Self {
         let mut schema = Schema::new();
         schema.add_all(&plan1.schema());
         schema.add_all(&plan2.schema());
@@ -179,7 +179,7 @@ impl ProductPlan {
     }
 }
 
-impl Plan for ProductPlan {
+impl<'p1, 'p2> Plan for ProductPlan<'p1, 'p2> {
     fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
         let s1 = self.plan1.open();
         let s2 = self.plan2.open();
@@ -211,10 +211,7 @@ impl Plan for ProductPlan {
 mod tests {
     use super::{Plan, ProductPlan, SelectPlan, TablePlan};
     use crate::{
-        query::{
-            predicate::{Expression, Predicate, Term},
-            scan::Scan,
-        },
+        query::predicate::{Expression, Predicate, Term},
         record::{schema::Schema, table_scan::TableScan},
         server::simple_db::SimpleDB,
     };
@@ -223,6 +220,7 @@ mod tests {
     #[test]
     fn test() {
         let dir = tempdir().unwrap();
+        println!("{:?}", dir);
         {
             let mut db = SimpleDB::new_for_test(dir.path(), "plan_test.log");
             db.init();
@@ -274,8 +272,8 @@ mod tests {
                 }
 
                 // 3. test
-                let p1 = Box::new(TablePlan::new(tx.clone(), "student", mdm));
-                let p2 = Box::new(TablePlan::new(tx.clone(), "dept", mdm));
+                let p1 = Box::new(TablePlan::new(tx.clone(), "student", mdm.clone()));
+                let p2 = Box::new(TablePlan::new(tx.clone(), "dept", mdm.clone()));
                 let p3 = Box::new(ProductPlan::new(p1, p2));
 
                 let expr = Expression::new(
