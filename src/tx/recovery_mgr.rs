@@ -443,7 +443,7 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
         Ok(())
     }
 
-    pub(crate) fn rollback<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
+    pub(crate) fn rollback<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
         self.do_rollback(tx)?;
         self.bm.flush_all(self.txnum)?;
         let lsn = RollbackRecord::write_to_log(self.lm.clone(), self.txnum)?;
@@ -451,7 +451,7 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
         Ok(())
     }
 
-    pub(crate) fn recover<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
+    pub(crate) fn recover<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
         self.do_recover(tx)?;
         self.bm.flush_all(self.txnum)?;
         let lsn = CheckpointRecord::write_to_log(self.lm.clone())?;
@@ -473,7 +473,7 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
         Ok(lsn)
     }
 
-    fn do_rollback<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
+    fn do_rollback<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
         let mut iter = self.lm.reverse_iter()?;
         while iter.has_next() {
             let bytes = iter.next().unwrap();
@@ -488,7 +488,7 @@ impl<'lm, 'bm> RecoveryMgr<'lm, 'bm> {
         Ok(())
     }
 
-    fn do_recover<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm, 'lt>) -> Result<()> {
+    fn do_recover<'tx, 'lt>(&self, tx: &'tx mut TxInner<'lm, 'bm>) -> Result<()> {
         let mut finished_txs: Vec<i32> = Vec::new();
         let mut iter = self.lm.reverse_iter()?;
         while iter.has_next() {

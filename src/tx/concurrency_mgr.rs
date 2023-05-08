@@ -5,7 +5,7 @@
 
 use super::lock_table::{LockTable, Result};
 use crate::file::block_id::BlockId;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 #[derive(Debug, PartialEq, Eq)]
 enum LockType {
@@ -13,13 +13,13 @@ enum LockType {
     X,
 }
 
-pub struct ConcurrencyMgr<'lt> {
-    lock_table: &'lt LockTable,
+pub struct ConcurrencyMgr {
+    lock_table: Arc<LockTable>,
     locks: HashMap<BlockId, LockType>,
 }
 
-impl<'lt> ConcurrencyMgr<'lt> {
-    pub fn new(lock_table: &'lt LockTable) -> Self {
+impl ConcurrencyMgr {
+    pub fn new(lock_table: Arc<LockTable>) -> Self {
         Self {
             lock_table,
             locks: HashMap::new(),

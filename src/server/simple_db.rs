@@ -20,7 +20,7 @@ pub struct SimpleDB<'lm, 'bm> {
     lm: Arc<LogMgr<'lm>>,
     bm: Arc<BufferMgr<'bm, 'lm>>,
     tn: TxNumber,
-    lt: LockTable,
+    lt: Arc<LockTable>,
     mm: Option<MetadataMgr>,
 }
 
@@ -34,7 +34,7 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         let lm = Arc::new(LogMgr::new(fm.clone(), SimpleDB::LOG_FILE));
         let bm = Arc::new(BufferMgr::new(fm.clone(), lm.clone(), buffersize));
         let tn = TxNumber::new();
-        let lt = LockTable::new();
+        let lt = Arc::new(LockTable::new());
         Self {
             fm,
             lm,
@@ -54,7 +54,7 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
             SimpleDB::BUFFER_SIZE,
         ));
         let tn = TxNumber::new();
-        let lt = LockTable::new();
+        let lt = Arc::new(LockTable::new());
         Self {
             fm,
             lm,
@@ -75,13 +75,13 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         self.mm = Some(mm);
     }
 
-    pub fn new_tx<'lt, 's: 'lt>(&'s self) -> Rc<RefCell<Transaction<'lm, 'bm, 'lt>>> {
+    pub fn new_tx(&self) -> Rc<RefCell<Transaction<'lm, 'bm>>> {
         Rc::new(RefCell::new(Transaction::new(
             self.tn.next(),
             self.fm.clone(),
             self.lm.clone(),
             self.bm.clone(),
-            &self.lt,
+            self.lt.clone(),
         )))
     }
 

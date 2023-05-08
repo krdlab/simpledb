@@ -60,7 +60,7 @@ impl StatMgrData {
         let mut table_names: Vec<String> = Vec::new();
         {
             let layout = self.tm.layout(TABLE_CATALOG_TABLE_NAME, tx.clone())?;
-            let mut tcat = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, &layout);
+            let mut tcat = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, layout);
             while tcat.next()? {
                 let table_name = tcat.get_string(TABLE_NAME_FIELD).unwrap();
                 table_names.push(table_name);
@@ -68,7 +68,7 @@ impl StatMgrData {
         }
         for table_name in table_names {
             if let Ok(layout) = self.tm.layout(&table_name, tx.clone()) {
-                let stats = StatMgrData::calc_table_stats(&table_name, &layout, tx.clone())?;
+                let stats = StatMgrData::calc_table_stats(&table_name, layout, tx.clone())?;
                 self.table_stats.insert(table_name, stats);
             }
         }
@@ -78,7 +78,7 @@ impl StatMgrData {
     pub(crate) fn get_or_create_table_stat_info(
         &mut self,
         table_name: &str,
-        layout: &Layout,
+        layout: Layout,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<StatInfo> {
         let si = match self.table_stats.entry(table_name.into()) {
@@ -93,7 +93,7 @@ impl StatMgrData {
 
     pub(crate) fn calc_table_stats(
         table_name: &str,
-        layout: &Layout,
+        layout: Layout,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<StatInfo> {
         let mut num_records = 0;
@@ -133,7 +133,7 @@ impl StatMgr {
     pub fn table_stat_info(
         &self,
         table_name: &str,
-        layout: &Layout,
+        layout: Layout,
         tx: Rc<RefCell<Transaction>>,
     ) -> StatInfo {
         let mut data = self.data.lock().unwrap();
@@ -175,16 +175,18 @@ mod tests {
                 sm.init(tx.clone());
 
                 let layout = tm.layout(TABLE_CATALOG_TABLE_NAME, tx.clone()).unwrap();
-                let stats1 = sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, &layout, tx.clone());
+                let stats1 =
+                    sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, layout.clone(), tx.clone());
                 assert_eq!(stats1.blocks_accessed(), 1);
                 assert_eq!(stats1.records_output(), 2);
                 assert_eq!(stats1.distinct_values(TABLE_NAME_FIELD), 1);
 
                 for _ in 0..(STATS_REFRESH_THRESHOLD + 1) {
-                    let _ = sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, &layout, tx.clone());
+                    let _ =
+                        sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, layout.clone(), tx.clone());
                 }
 
-                let stats2 = sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, &layout, tx.clone());
+                let stats2 = sm.table_stat_info(TABLE_CATALOG_TABLE_NAME, layout, tx.clone());
                 assert_eq!(stats2, stats1);
             }
             tx.borrow_mut().commit().unwrap();

@@ -9,6 +9,7 @@ mod file;
 mod log_mgr;
 mod metadata;
 mod parse;
+mod plan;
 mod query;
 mod record;
 pub mod server;

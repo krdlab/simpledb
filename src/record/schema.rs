@@ -102,6 +102,7 @@ impl Schema {
     }
 }
 
+#[derive(Clone)]
 pub struct Layout {
     schema: Schema,
     offsets: HashMap<String, usize>,
