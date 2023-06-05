@@ -34,7 +34,7 @@ pub struct TablePlan<'lm, 'bm> {
 }
 
 impl<'lm, 'bm> TablePlan<'lm, 'bm> {
-    pub fn new<'m>(
+    pub fn new(
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
         table_name: &str,
         meta_mgr: Arc<MetadataMgr>,
