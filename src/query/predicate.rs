@@ -5,9 +5,9 @@
 
 use std::fmt::Display;
 
-use crate::record::schema::Schema;
+use crate::{plan::plan::Plan, record::schema::Schema};
 
-use super::scan::Scan;
+use super::scan::UpdateScan;
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Constant {
@@ -22,7 +22,7 @@ pub enum Term {
 }
 
 impl Term {
-    pub fn evaluate<S: Scan>(&self, s: &mut S) -> Constant {
+    pub fn evaluate<'s>(&self, s: &Box<dyn UpdateScan + 's>) -> Constant {
         match self {
             Self::Constant(val) => val.clone(),
             Self::FieldName(fname) => s.get_val(fname.as_str()).unwrap(),
@@ -55,17 +55,15 @@ impl Expression {
         Self { lhs, rhs }
     }
 
-    pub fn is_satisfied<S: Scan>(&self, s: &mut S) -> bool {
+    pub fn is_satisfied<'s>(&self, s: &Box<dyn UpdateScan + 's>) -> bool {
         let lval = self.lhs.evaluate(s);
         let rval = self.rhs.evaluate(s);
         lval == rval
     }
 
-    /*
-    pub fn reduction_factor(p: Plan) -> i32 {
-        // TODO
+    pub fn reduction_factor<'p>(&self, p: &Box<dyn Plan + 'p>) -> usize {
+        todo!()
     }
-    */
 
     // F = c
     pub fn equates_with_constant(&self, field_name: &str) -> Option<Constant> {
@@ -115,7 +113,7 @@ impl Display for Expression {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Predicate {
     exprs: Vec<Expression>,
 }
@@ -137,7 +135,7 @@ impl Predicate {
         self.exprs.append(&mut pred.exprs);
     }
 
-    pub fn is_satisfied<S: Scan>(&self, scan: &mut S) -> bool {
+    pub fn is_satisfied<'s>(&self, scan: &Box<dyn UpdateScan + 's>) -> bool {
         for t in self.exprs.iter() {
             if !t.is_satisfied(scan) {
                 return false;
@@ -146,11 +144,13 @@ impl Predicate {
         true
     }
 
-    /*
-    pub fn reduction_factor(&self, p: Plan) -> i32 {
-        // TODO
+    pub fn reduction_factor<'p>(&self, p: &Box<dyn Plan + 'p>) -> usize {
+        let mut factor = 1;
+        for e in self.exprs.iter() {
+            factor *= e.reduction_factor(p);
+        }
+        factor
     }
-    */
 
     pub fn select_sub_pred(&self, schema: &Schema) -> Option<Predicate> {
         let mut result = Predicate::empty();

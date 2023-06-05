@@ -47,12 +47,12 @@ pub enum TransactionError {
 
 pub type Result<T> = core::result::Result<T, TransactionError>;
 
-pub(crate) struct TxInner<'lm, 'bm, 'lt> {
-    cm: RefCell<ConcurrencyMgr<'lt>>,
+pub(crate) struct TxInner<'lm, 'bm> {
+    cm: RefCell<ConcurrencyMgr>,
     bl: BufferList<'bm, 'lm>,
     txnum: i32,
 }
-impl TxInner<'_, '_, '_> {
+impl TxInner<'_, '_> {
     pub fn pin(&mut self, blk: &BlockId) -> Result<()> {
         self.bl.pin(blk)?;
         Ok(())
@@ -103,20 +103,20 @@ impl TxNumber {
     }
 }
 
-pub struct Transaction<'lm, 'bm, 'lt> {
-    inner: TxInner<'lm, 'bm, 'lt>,
+pub struct Transaction<'lm, 'bm> {
+    inner: TxInner<'lm, 'bm>,
     fm: Arc<FileMgr>,
     bm: Arc<BufferMgr<'bm, 'lm>>,
     rm: RecoveryMgr<'lm, 'bm>,
 }
 
-impl<'lm, 'bm, 'lt> Transaction<'lm, 'bm, 'lt> {
+impl<'lm, 'bm> Transaction<'lm, 'bm> {
     pub fn new(
         txnum: i32,
         fm: Arc<FileMgr>,
         lm: Arc<LogMgr<'lm>>,
         bm: Arc<BufferMgr<'bm, 'lm>>,
-        lock_table: &'lt LockTable,
+        lock_table: Arc<LockTable>,
     ) -> Self {
         let inner = TxInner {
             cm: RefCell::new(ConcurrencyMgr::new(lock_table)),

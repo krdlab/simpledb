@@ -138,7 +138,7 @@ mod tests {
     use super::Lexer;
 
     #[test]
-    fn test() {
+    fn test_query() {
         let input = "select name from users where id = 1";
         let mut l = Lexer::new(input).unwrap();
 
@@ -165,5 +165,50 @@ mod tests {
 
         assert!(l.match_int_constant());
         assert_eq!(l.eat_int_constant().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_create() {
+        let input = "create table T1(A int, B varchar(9))";
+        let mut l = Lexer::new(input).unwrap();
+
+        assert!(l.match_keyword("create"));
+        l.eat_keyword("create").unwrap();
+
+        assert!(l.match_keyword("table"));
+        l.eat_keyword("table").unwrap();
+
+        assert!(l.match_id());
+        assert_eq!(l.eat_id().unwrap(), "t1");
+
+        assert!(l.match_delim('('));
+        l.eat_delim('(').unwrap();
+
+        assert!(l.match_id());
+        assert_eq!(l.eat_id().unwrap(), "a");
+
+        assert!(l.match_keyword("int"));
+        l.eat_keyword("int").unwrap();
+
+        assert!(l.match_delim(','));
+        l.eat_delim(',').unwrap();
+
+        assert!(l.match_id());
+        assert_eq!(l.eat_id().unwrap(), "b");
+
+        assert!(l.match_keyword("varchar"));
+        l.eat_keyword("varchar").unwrap();
+
+        assert!(l.match_delim('('));
+        l.eat_delim('(').unwrap();
+
+        assert!(l.match_int_constant());
+        assert_eq!(l.eat_int_constant().unwrap(), 9);
+
+        assert!(l.match_delim(')'));
+        l.eat_delim(')').unwrap();
+
+        assert!(l.match_delim(')'));
+        l.eat_delim(')').unwrap();
     }
 }

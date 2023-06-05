@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(dir.path().exists(), true);
 
         let fm = Arc::new(FileMgr::new(dir.path(), 4096));
-        assert_eq!(fm.is_new(), false);
+        assert_eq!(fm.is_new(), true); // dir is empty
 
         let lm = LogMgr::new(fm, "test_logmgr.log");
 

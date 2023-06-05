@@ -95,7 +95,7 @@ impl MetadataMgr {
     pub fn table_stat_info(
         &self,
         table_name: &str,
-        layout: &Layout,
+        layout: Layout,
         tx: Rc<RefCell<Transaction>>,
     ) -> StatInfo {
         self.sm.table_stat_info(table_name, layout, tx)
@@ -147,14 +147,14 @@ mod tests {
                         // part 2: statistics metadata
                         let layout = mm.table_layout("MyTable", tx.clone()).unwrap();
                         {
-                            let mut ts = TableScan::new(tx.clone(), "MyTable", &layout);
+                            let mut ts = TableScan::new(tx.clone(), "MyTable", layout.clone());
                             for i in 0..50 {
                                 ts.insert().unwrap();
                                 ts.set_i32("A", i).unwrap();
                                 ts.set_string("B", format!("rec{i}")).unwrap();
                             }
                         }
-                        let stat = mm.table_stat_info("MyTable", &layout, tx.clone());
+                        let stat = mm.table_stat_info("MyTable", layout.clone(), tx.clone());
                         assert_eq!(
                             stat.blocks_accessed(),
                             layout.slotsize() * 50 / tx.borrow().block_size() + 1
@@ -173,7 +173,7 @@ mod tests {
                     {
                         // part 4: index metadata
                         let layout = mm.table_layout("MyTable", tx.clone()).unwrap();
-                        let stat = mm.table_stat_info("MyTable", &layout, tx.clone());
+                        let stat = mm.table_stat_info("MyTable", layout, tx.clone());
 
                         mm.create_index("indexA", "MyTable", "A", tx.clone())
                             .unwrap();

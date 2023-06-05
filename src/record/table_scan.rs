@@ -17,33 +17,29 @@ use crate::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-pub struct TableScan<'lm, 'bm, 'lt, 'ly> {
-    tx: Rc<RefCell<Transaction<'lm, 'bm, 'lt>>>,
-    layout: &'ly Layout,
+pub struct TableScan<'lm, 'bm> {
+    tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
+    layout: Layout,
     filename: String,
-    rp: RecordPage<'ly>,
+    rp: RecordPage,
     current_slot: Option<i32>,
 }
 
-impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
-    pub fn new(
-        tx: Rc<RefCell<Transaction<'lm, 'bm, 'lt>>>,
-        tblname: &str,
-        layout: &'ly Layout,
-    ) -> Self {
+impl<'tx, 'lm, 'bm> TableScan<'lm, 'bm> {
+    pub fn new(tx: Rc<RefCell<Transaction<'lm, 'bm>>>, tblname: &str, layout: Layout) -> Self {
         let filename = format!("{tblname}.tbl");
         let rp = {
             let mut tx = tx.borrow_mut();
             if tx.size(&filename).unwrap() == 0 {
                 let block = tx.append(&filename).unwrap(); // TODO
                 tx.pin(&block).unwrap(); // TODO
-                let rp = RecordPage::new(block, layout);
+                let rp = RecordPage::new(block, layout.clone());
                 rp.format(&mut *tx).unwrap(); // TODO
                 rp
             } else {
                 let block = BlockId::new(&filename, 0);
                 tx.pin(&block).unwrap(); // TODO
-                RecordPage::new(block, layout)
+                RecordPage::new(block, layout.clone())
             }
         };
 
@@ -64,7 +60,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
         self.close();
         let block = BlockId::new(&self.filename, blknum);
         self.tx.borrow_mut().pin(&block)?;
-        self.rp = RecordPage::new(block, self.layout);
+        self.rp = RecordPage::new(block, self.layout.clone());
         self.current_slot = None;
         Ok(())
     }
@@ -75,7 +71,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
             let mut tx = self.tx.borrow_mut();
             let block = tx.append(&self.filename)?;
             tx.pin(&block)?;
-            self.rp = RecordPage::new(block, self.layout);
+            self.rp = RecordPage::new(block, self.layout.clone());
             self.rp.format(&mut *tx)?;
         }
         self.current_slot = None;
@@ -177,7 +173,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
         self.close();
         let block = BlockId::new(&self.filename, rid.block_number());
         self.tx.borrow_mut().pin(&block)?;
-        self.rp = RecordPage::new(block, self.layout);
+        self.rp = RecordPage::new(block, self.layout.clone());
         self.current_slot = rid.slot();
         Ok(())
     }
@@ -187,7 +183,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> TableScan<'lm, 'bm, 'lt, 'ly> {
     }
 }
 
-impl<'tx, 'lm, 'bm, 'lt, 'ly> Scan for TableScan<'lm, 'bm, 'lt, 'ly> {
+impl<'tx, 'lm, 'bm> Scan for TableScan<'lm, 'bm> {
     fn before_first(&mut self) -> Result<()> {
         TableScan::before_first(self)
     }
@@ -217,7 +213,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> Scan for TableScan<'lm, 'bm, 'lt, 'ly> {
     }
 }
 
-impl<'tx, 'lm, 'bm, 'lt, 'ly> UpdateScan for TableScan<'lm, 'bm, 'lt, 'ly> {
+impl<'tx, 'lm, 'bm> UpdateScan for TableScan<'lm, 'bm> {
     fn set_val(&mut self, field_name: &str, value: Constant) -> crate::query::scan::Result<()> {
         TableScan::set_val(self, field_name, value)
     }
@@ -238,8 +234,8 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> UpdateScan for TableScan<'lm, 'bm, 'lt, 'ly> {
         TableScan::delete(self)
     }
 
-    fn get_rid(&self) -> RID {
-        TableScan::current_rid(self)
+    fn get_rid(&self) -> Result<RID> {
+        Ok(TableScan::current_rid(self))
     }
 
     fn move_to_rid(&mut self, rid: RID) -> crate::query::scan::Result<()> {
@@ -247,7 +243,7 @@ impl<'tx, 'lm, 'bm, 'lt, 'ly> UpdateScan for TableScan<'lm, 'bm, 'lt, 'ly> {
     }
 }
 
-impl<'tx, 'lm, 'bm, 'lt, 'ly> Drop for TableScan<'lm, 'bm, 'lt, 'ly> {
+impl<'tx, 'lm, 'bm> Drop for TableScan<'lm, 'bm> {
     fn drop(&mut self) {
         self.close();
     }
@@ -275,7 +271,7 @@ mod tests {
 
             let tx = db.new_tx();
             {
-                let mut ts = TableScan::new(tx.clone(), "T", &layout);
+                let mut ts = TableScan::new(tx.clone(), "T", layout.clone());
                 for i in 0..50 {
                     ts.insert().unwrap();
                     ts.set_i32("A", i).unwrap();

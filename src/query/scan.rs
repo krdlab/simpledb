@@ -18,6 +18,9 @@ pub enum ScanError {
 
     #[error("{0:?}")]
     RecordPage(#[from] RecordPageError),
+
+    #[error("{0:?}")]
+    UnsupportedOperation(String),
 }
 
 pub type Result<T> = core::result::Result<T, ScanError>;
@@ -39,7 +42,7 @@ pub trait UpdateScan: Scan {
     fn insert(&mut self) -> Result<()>;
     fn delete(&mut self) -> Result<()>;
 
-    fn get_rid(&self) -> RID;
+    fn get_rid(&self) -> Result<RID>;
     fn move_to_rid(&mut self, rid: RID) -> Result<()>;
 }
 

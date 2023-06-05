@@ -51,8 +51,7 @@ struct FileMgrData {
 
 impl FileMgr {
     pub fn new(db_dir_path: &Path, blocksize: usize) -> Self {
-        let is_new = !db_dir_path.exists();
-        if is_new {
+        if !db_dir_path.exists() {
             fs::create_dir_all(db_dir_path).expect("failed to create db directory");
         }
         let leftover = fs::read_dir(db_dir_path).unwrap();
@@ -65,11 +64,16 @@ impl FileMgr {
                 }
             }
         }
+        let is_new = FileMgr::is_empty_dir(db_dir_path);
         FileMgr {
             blocksize,
             is_new,
             data: Mutex::new(FileMgrData::new(db_dir_path.to_path_buf(), blocksize)),
         }
+    }
+
+    fn is_empty_dir(path: &Path) -> bool {
+        path.read_dir().map_or(false, |mut d| d.next().is_none())
     }
 
     pub fn blocksize(&self) -> usize {
@@ -263,7 +267,7 @@ mod tests {
         assert_eq!(dir.path().exists(), true);
 
         let fm = FileMgr::new(dir.path(), 4096);
-        assert_eq!(fm.is_new(), false);
+        assert_eq!(fm.is_new(), true); // dir is empty
 
         dir.close()?;
         Ok(())
