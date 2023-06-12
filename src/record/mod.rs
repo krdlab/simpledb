@@ -3,6 +3,6 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-pub mod record_page;
+pub(crate) mod record_page;
 pub mod schema;
-pub mod table_scan;
+pub(crate) mod table_scan;
