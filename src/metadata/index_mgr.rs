@@ -137,7 +137,7 @@ impl IndexMgr {
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<()> {
         let layout = self.index_catalog_layout(&tx)?;
-        let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME, layout);
+        let mut ts = TableScan::new(tx, INDEX_CATALOG_TABLE_NAME.into(), layout);
         ts.insert()?;
         ts.set_string("indexname", index_name.into())?;
         ts.set_string("tablename", table_name.into())?;
@@ -161,7 +161,7 @@ impl IndexMgr {
             let mut names = Vec::new();
 
             let layout = self.index_catalog_layout(&tx)?;
-            let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME, layout);
+            let mut ts = TableScan::new(tx.clone(), INDEX_CATALOG_TABLE_NAME.into(), layout);
             while ts.next()? {
                 if ts.get_string("tablename").unwrap() == tblname {
                     names.push((

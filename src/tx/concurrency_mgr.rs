@@ -61,30 +61,28 @@ impl ConcurrencyMgr {
 #[cfg(test)]
 mod tests {
     use crate::{file::block_id::BlockId, server::simple_db::SimpleDB};
-    use std::{path::Path, sync::Arc, thread, time::Duration};
+    use std::{
+        sync::{Arc, Mutex},
+        thread,
+        time::Duration,
+    };
     use tempfile::tempdir;
-
-    struct Context<'lm, 'bm> {
-        db: SimpleDB<'lm, 'bm>,
-    }
-    impl Context<'_, '_> {
-        pub fn new(path: &Path) -> Self {
-            let mut db = SimpleDB::new_for_test(path, "test_concurrency_mgr.log");
-            db.init();
-            Context { db }
-        }
-    }
 
     const FILE_NAME: &str = "test_concurrency_mgr_file";
 
     #[test]
     fn test_concurrency_mgr() {
         let dir = tempdir().unwrap();
-        let ctx = Arc::new(Context::new(dir.path().join("testdb").as_path()));
+        let path = dir.path().join("testdb");
+        let db = Arc::new(Mutex::new(SimpleDB::new_for_test(
+            path.as_path(),
+            "test_concurrency_mgr.log",
+        )));
+        db.lock().unwrap().init();
         {
-            let ctx1 = ctx.clone();
+            let db1 = db.clone();
             let th1 = thread::spawn(move || {
-                let tx = ctx1.db.new_tx();
+                let tx = db1.lock().unwrap().new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
@@ -105,9 +103,9 @@ mod tests {
                 println!("tx1: commit");
             });
 
-            let ctx2 = ctx.clone();
+            let db2 = db.clone();
             let th2 = thread::spawn(move || {
-                let tx = ctx2.db.new_tx();
+                let tx = db2.lock().unwrap().new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);
@@ -128,9 +126,9 @@ mod tests {
                 println!("tx2: commit");
             });
 
-            let ctx3 = ctx.clone();
+            let db3 = db.clone();
             let th3 = thread::spawn(move || {
-                let tx = ctx3.db.new_tx();
+                let tx = db3.lock().unwrap().new_tx();
 
                 let block1 = BlockId::new(FILE_NAME, 1);
                 let block2 = BlockId::new(FILE_NAME, 2);

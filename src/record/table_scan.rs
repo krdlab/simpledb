@@ -23,10 +23,11 @@ pub struct TableScan<'lm, 'bm> {
     filename: String,
     rp: RecordPage,
     current_slot: Option<i32>,
+    closed: bool,
 }
 
 impl<'tx, 'lm, 'bm> TableScan<'lm, 'bm> {
-    pub fn new(tx: Rc<RefCell<Transaction<'lm, 'bm>>>, tblname: &str, layout: Layout) -> Self {
+    pub fn new(tx: Rc<RefCell<Transaction<'lm, 'bm>>>, tblname: String, layout: Layout) -> Self {
         let filename = format!("{tblname}.tbl");
         let rp = {
             let mut tx = tx.borrow_mut();
@@ -49,11 +50,15 @@ impl<'tx, 'lm, 'bm> TableScan<'lm, 'bm> {
             filename,
             rp,
             current_slot: None,
+            closed: false,
         }
     }
 
     fn close(&mut self) {
-        self.tx.borrow_mut().unpin(self.rp.block());
+        if !self.closed {
+            self.tx.borrow_mut().unpin(self.rp.block());
+            self.closed = true;
+        }
     }
 
     fn move_to_block(&mut self, blknum: i64) -> Result<()> {
@@ -271,7 +276,7 @@ mod tests {
 
             let tx = db.new_tx();
             {
-                let mut ts = TableScan::new(tx.clone(), "T", layout.clone());
+                let mut ts = TableScan::new(tx.clone(), "T".into(), layout.clone());
                 for i in 0..50 {
                     ts.insert().unwrap();
                     ts.set_i32("A", i).unwrap();

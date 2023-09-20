@@ -297,7 +297,7 @@ mod tests {
 
             let tx = db.new_tx();
             {
-                let mut s1 = TableScan::new(tx.clone(), "T", layout.clone());
+                let mut s1 = TableScan::new(tx.clone(), "T".into(), layout.clone());
                 s1.before_first().unwrap();
                 for i in 0..200 {
                     s1.insert().unwrap();
@@ -306,7 +306,7 @@ mod tests {
                 }
             }
             {
-                let s2 = Box::new(TableScan::new(tx.clone(), "T", layout.clone()));
+                let s2 = Box::new(TableScan::new(tx.clone(), "T".into(), layout.clone()));
                 let pred = {
                     let c = Constant::Int(10);
                     let t = Expression::new(Term::FieldName("A".into()), Term::Constant(c));
@@ -339,7 +339,7 @@ mod tests {
                 schema1.add_string_field("B", 9);
                 let layout1 = Layout::new(schema1);
                 {
-                    let mut us1 = TableScan::new(tx.clone(), "T1", layout1.clone());
+                    let mut us1 = TableScan::new(tx.clone(), "T1".into(), layout1.clone());
                     us1.before_first().unwrap();
 
                     for i in 0..200 {
@@ -354,7 +354,7 @@ mod tests {
                 schema2.add_string_field("D", 9);
                 let layout2 = Layout::new(schema2);
                 {
-                    let mut us2 = TableScan::new(tx.clone(), "T2", layout2.clone());
+                    let mut us2 = TableScan::new(tx.clone(), "T2".into(), layout2.clone());
                     us2.before_first().unwrap();
                     for i in 0..200 {
                         us2.insert().unwrap();
@@ -365,8 +365,8 @@ mod tests {
                 }
 
                 {
-                    let s1 = Box::new(TableScan::new(tx.clone(), "T1", layout1.clone()));
-                    let s2 = Box::new(TableScan::new(tx.clone(), "T2", layout2.clone()));
+                    let s1 = Box::new(TableScan::new(tx.clone(), "T1".into(), layout1.clone()));
+                    let s2 = Box::new(TableScan::new(tx.clone(), "T2".into(), layout2.clone()));
                     let s3 = Box::new(ProductScan::new(s1, s2));
 
                     let t =

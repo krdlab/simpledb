@@ -147,7 +147,8 @@ mod tests {
                         // part 2: statistics metadata
                         let layout = mm.table_layout("MyTable", tx.clone()).unwrap();
                         {
-                            let mut ts = TableScan::new(tx.clone(), "MyTable", layout.clone());
+                            let mut ts =
+                                TableScan::new(tx.clone(), "MyTable".into(), layout.clone());
                             for i in 0..50 {
                                 ts.insert().unwrap();
                                 ts.set_i32("A", i).unwrap();

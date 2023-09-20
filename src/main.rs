@@ -42,7 +42,7 @@ fn run_sql(db: &SimpleDB, line: &String) {
                 .join(" | ");
             println!("{}", header);
 
-            let mut s = p.open();
+            let mut s = p.open(tx.clone());
             while s.next().unwrap() {
                 let record = schema
                     .fields_iter()
@@ -65,7 +65,7 @@ fn run_sql(db: &SimpleDB, line: &String) {
     print_affected(count);
 }
 
-fn print_affected(count: i32) {
+fn print_affected(count: u64) {
     println!(
         "Query OK, {} {} affected",
         count,

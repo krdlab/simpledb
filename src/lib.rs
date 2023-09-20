@@ -11,6 +11,7 @@ mod metadata;
 mod parse;
 mod plan;
 mod query;
+pub mod rdbc;
 pub mod record;
 pub mod server;
 mod tx;

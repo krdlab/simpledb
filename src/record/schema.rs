@@ -66,6 +66,10 @@ impl Schema {
         self.fields.contains(&fname.into())
     }
 
+    pub fn field_name(&self, i: usize) -> Option<&String> {
+        self.fields.get(i)
+    }
+
     pub fn field_type(&self, fname: &str) -> Option<SqlType> {
         self.info.get(fname).and_then(|fi| Some(fi.ftype))
     }
