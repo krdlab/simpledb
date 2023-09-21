@@ -4,7 +4,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::plan::planner::Planner;
-use crate::query::scan::{ScanError, UpdateScan};
+use crate::query::scan::UpdateScan;
 use crate::rdbc;
 use crate::rdbc::api::{Connection, ResultSet, ResultSetMetaData};
 use crate::record::schema::{Schema, SqlType};
@@ -66,7 +66,7 @@ impl Connection for EmbeddedConnection<'_, '_> {
         &mut self,
         _sql: &str,
     ) -> rdbc::api::Result<Box<dyn rdbc::api::PreparedStatement + '_>> {
-        todo!()
+        todo!() // TODO:
     }
 
     fn commit(&mut self) -> rdbc::api::Result<()> {
@@ -101,11 +101,7 @@ impl<'lm, 'bm, 'c> EmbeddedStatement<'lm, 'bm, 'c> {
 }
 
 impl<'lm, 'bm, 'c> rdbc::api::Statement for EmbeddedStatement<'lm, 'bm, 'c> {
-    fn execute_query(
-        &mut self,
-        sql: &str,
-        params: &[rdbc::api::Value],
-    ) -> rdbc::api::Result<Box<dyn ResultSet + '_>> {
+    fn execute_query(&mut self, sql: &str) -> rdbc::api::Result<Box<dyn ResultSet + '_>> {
         let tx = self.conn.transaction();
         match self.conn.planner().create_query_plan(sql, tx.clone()) {
             Ok(plan) => {
@@ -125,7 +121,7 @@ impl<'lm, 'bm, 'c> rdbc::api::Statement for EmbeddedStatement<'lm, 'bm, 'c> {
         }
     }
 
-    fn execute_update(&mut self, sql: &str, params: &[rdbc::api::Value]) -> rdbc::api::Result<u64> {
+    fn execute_update(&mut self, sql: &str) -> rdbc::api::Result<u64> {
         let tx = self.conn.transaction();
         match self.conn.planner().execute_update(sql, tx) {
             Ok(num) => {
@@ -165,10 +161,6 @@ impl<'lm, 'bm, 'c, 'scan> EmbeddedResultSet<'lm, 'bm, 'c, 'scan> {
             SqlType::Integer => rdbc::api::DataType::Integer,
             SqlType::VarChar => rdbc::api::DataType::Utf8,
         }
-    }
-
-    fn to_rdbc_error(first: ScanError, second: rdbc::api::Error) -> rdbc::api::Error {
-        rdbc::api::Error::General(format!("{}, suppressed: {:?}", first, second))
     }
 
     fn close(&mut self) -> rdbc::api::Result<()> {

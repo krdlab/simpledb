@@ -14,25 +14,25 @@ fn main() {
         {
             let mut s = conn.create_statement().unwrap();
             {
-                match s.execute_update("create table test (a int, b varchar(10))", &[]) {
+                match s.execute_update("create table test (a int, b varchar(10))") {
                     Err(api::Error::Internal(e))
                         if e.to_string().contains("TableAlreadyExists") =>
                     {
-                        s.execute_update("delete from test", &[]).unwrap();
+                        s.execute_update("delete from test").unwrap();
                     }
                     Err(e) => panic!("{:?}", e),
                     Ok(_) => { /* through */ }
                 }
-                s.execute_update("insert into test (a, b) values (1, 'aaa')", &[])
+                s.execute_update("insert into test (a, b) values (1, 'aaa')")
                     .unwrap();
 
-                let mut rs = s.execute_query("select b from test", &[]).unwrap();
+                let mut rs = s.execute_query("select b from test").unwrap();
                 while rs.next().unwrap() {
                     println!("{:?}", rs.get_string(0).unwrap());
                 }
             }
             {
-                let mut rs = s.execute_query("select a from test", &[]).unwrap();
+                let mut rs = s.execute_query("select a from test").unwrap();
                 while rs.next().unwrap() {
                     println!("{:?}", rs.get_i32(0).unwrap());
                 }

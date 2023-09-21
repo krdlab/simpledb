@@ -47,8 +47,8 @@ pub trait Connection {
 }
 
 pub trait Statement {
-    fn execute_query(&mut self, sql: &str, params: &[Value]) -> Result<Box<dyn ResultSet + '_>>;
-    fn execute_update(&mut self, sql: &str, params: &[Value]) -> Result<u64>;
+    fn execute_query(&mut self, sql: &str) -> Result<Box<dyn ResultSet + '_>>;
+    fn execute_update(&mut self, sql: &str) -> Result<u64>;
 }
 
 pub trait PreparedStatement {
