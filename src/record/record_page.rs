@@ -38,7 +38,6 @@ impl Into<i32> for SlotFlag {
 }
 
 pub struct RecordPage {
-    // tx: &'tx mut Transaction<'lm, 'bm, 'lt>,
     block: BlockId,
     layout: Layout,
 }

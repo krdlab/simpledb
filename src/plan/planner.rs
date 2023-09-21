@@ -261,9 +261,6 @@ impl<'s> Planner {
         self.verify_query(&qry);
         let plan = self.qp.create_plan(qry, tx);
         Ok(plan)
-        // see https://users.rust-lang.org/t/how-to-return-value-referencing-local-variable/60650/5
-        // ガードの中身の参照を引き連れていくので，今のままだとムリ
-        // plan の実装を外部から tx を与えて実行するような形式に修正する必要があるかも
     }
 
     fn verify_query(&self, data: &QueryData) {

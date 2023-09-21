@@ -34,7 +34,6 @@ pub trait Plan {
 
 pub struct TablePlan {
     table_name: String,
-    // tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
     layout: Layout,
     stat_info: StatInfo,
 }
