@@ -18,7 +18,8 @@
 - [x] Query Processing
 - [x] Parsing
 - [x] Planning
-- [ ] JDBC Interfaces
+- [x] JDBC Interfaces
+    - completed except remote interfaces
 - [ ] Indexing
 - [ ] Materialization and Sorting
 - [ ] Effective Buffer Utilization
