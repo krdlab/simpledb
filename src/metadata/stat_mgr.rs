@@ -60,7 +60,7 @@ impl StatMgrData {
         let mut table_names: Vec<String> = Vec::new();
         {
             let layout = self.tm.layout(TABLE_CATALOG_TABLE_NAME, tx.clone())?;
-            let mut tcat = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, layout);
+            let mut tcat = TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME.into(), layout);
             while tcat.next()? {
                 let table_name = tcat.get_string(TABLE_NAME_FIELD).unwrap();
                 table_names.push(table_name);

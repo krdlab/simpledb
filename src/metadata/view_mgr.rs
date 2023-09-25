@@ -34,7 +34,7 @@ impl ViewMgr {
 
     pub fn create_view(&self, vname: &str, vdef: &str, tx: Rc<RefCell<Transaction>>) -> Result<()> {
         let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone())?;
-        let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME, layout);
+        let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME.into(), layout);
         ts.insert()?;
         ts.set_string("viewname", vname.into())?;
         ts.set_string("viewdef", vdef.into())?;
@@ -43,7 +43,7 @@ impl ViewMgr {
 
     pub fn view_def(&self, vname: &str, tx: Rc<RefCell<Transaction>>) -> Result<String> {
         let layout = self.tm.layout(VIEW_CATALOG_TABLE_NAME, tx.clone())?;
-        let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME, layout);
+        let mut ts = TableScan::new(tx, VIEW_CATALOG_TABLE_NAME.into(), layout);
         while ts.next()? {
             if let Ok(vn) = ts.get_string("viewname") {
                 if vn == vname {

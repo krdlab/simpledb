@@ -69,9 +69,16 @@ impl TableMgr {
         {
             let mut tcat = TableScan::new(
                 tx.clone(),
-                TABLE_CATALOG_TABLE_NAME,
+                TABLE_CATALOG_TABLE_NAME.into(),
                 self.tcat_layout.clone(),
             );
+            while tcat.next()? {
+                let n = tcat.get_string(TABLE_NAME_FIELD)?;
+                if n == tblname {
+                    return Err(MetadataError::TableAlreadyExists(tblname.into()));
+                }
+            }
+            tcat.before_first()?;
             tcat.insert()?;
             tcat.set_string(TABLE_NAME_FIELD, tblname.into())?;
             tcat.set_i32("slotsize", layout.slotsize().try_into().unwrap())?;
@@ -79,7 +86,7 @@ impl TableMgr {
         {
             let mut fcat = TableScan::new(
                 tx.clone(),
-                FIELD_CATALOG_TABLE_NAME,
+                FIELD_CATALOG_TABLE_NAME.into(),
                 self.fcat_layout.clone(),
             );
             for fldname in schema.fields_iter() {
@@ -98,7 +105,11 @@ impl TableMgr {
     }
 
     fn table_slotsize(&self, tblname: &str, tx: Rc<RefCell<Transaction>>) -> Result<usize> {
-        let mut tcat = TableScan::new(tx, TABLE_CATALOG_TABLE_NAME, self.tcat_layout.clone());
+        let mut tcat = TableScan::new(
+            tx,
+            TABLE_CATALOG_TABLE_NAME.into(),
+            self.tcat_layout.clone(),
+        );
         while tcat.next()? {
             if let Ok(tn) = tcat.get_string(TABLE_NAME_FIELD) {
                 if tn == tblname {
@@ -115,7 +126,11 @@ impl TableMgr {
         let mut schema = Schema::new();
         let mut offsets = HashMap::new();
 
-        let mut fcat = TableScan::new(tx, FIELD_CATALOG_TABLE_NAME, self.fcat_layout.clone());
+        let mut fcat = TableScan::new(
+            tx,
+            FIELD_CATALOG_TABLE_NAME.into(),
+            self.fcat_layout.clone(),
+        );
         while fcat.next()? {
             if let Ok(tn) = fcat.get_string(TABLE_NAME_FIELD) {
                 if tn == tblname {
@@ -200,8 +215,11 @@ mod tests {
                 let tcat_layout = tm.layout(TABLE_CATALOG_TABLE_NAME, tx.clone()).unwrap();
                 let fcat_layout = tm.layout(FIELD_CATALOG_TABLE_NAME, tx.clone()).unwrap();
                 {
-                    let mut ts =
-                        TableScan::new(tx.clone(), TABLE_CATALOG_TABLE_NAME, tcat_layout.clone());
+                    let mut ts = TableScan::new(
+                        tx.clone(),
+                        TABLE_CATALOG_TABLE_NAME.into(),
+                        tcat_layout.clone(),
+                    );
                     assert_eq!(ts.next().unwrap(), true);
                     assert_eq!(
                         ts.get_string(TABLE_NAME_FIELD).unwrap(),
@@ -223,8 +241,11 @@ mod tests {
                     assert_eq!(ts.next().unwrap(), false);
                 }
                 {
-                    let mut ts =
-                        TableScan::new(tx.clone(), FIELD_CATALOG_TABLE_NAME, fcat_layout.clone());
+                    let mut ts = TableScan::new(
+                        tx.clone(),
+                        FIELD_CATALOG_TABLE_NAME.into(),
+                        fcat_layout.clone(),
+                    );
 
                     // NOTE: table catalog's fields
                     assert_eq!(ts.next().unwrap(), true);

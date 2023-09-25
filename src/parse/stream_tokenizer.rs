@@ -237,14 +237,14 @@ impl<'s> StreamTokenizer<'s> {
 
     fn comment_char(&mut self, ch: char) {
         let i = ch as usize;
-        if 0 <= i && i < self.ctype.len() {
+        if i < self.ctype.len() {
             self.ctype[i] = CT::COMMENT;
         }
     }
 
     fn quote_char(&mut self, ch: char) {
         let i = ch as usize;
-        if i >= 0 && i < self.ctype.len() {
+        if i < self.ctype.len() {
             self.ctype[i] = CT::QUOTE;
         }
     }

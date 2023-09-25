@@ -19,21 +19,26 @@ use crate::{
 use std::{cell::RefCell, cmp::min, rc::Rc, sync::Arc};
 
 pub trait Plan {
-    fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's>;
+    fn open<'lm, 'bm, 'scan>(
+        &self,
+        tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
+    ) -> Box<dyn UpdateScan + 'scan>
+    where
+        'lm: 'scan,
+        'bm: 'scan;
     fn blocks_accessed(&self) -> usize;
     fn records_output(&self) -> usize;
     fn distinct_values(&self, field_name: &str) -> usize;
     fn schema(&self) -> Schema;
 }
 
-pub struct TablePlan<'lm, 'bm> {
+pub struct TablePlan {
     table_name: String,
-    tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
     layout: Layout,
     stat_info: StatInfo,
 }
 
-impl<'lm, 'bm> TablePlan<'lm, 'bm> {
+impl<'lm, 'bm> TablePlan {
     pub fn new(
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
         table_name: &str,
@@ -43,18 +48,24 @@ impl<'lm, 'bm> TablePlan<'lm, 'bm> {
         let stat_info = meta_mgr.table_stat_info(table_name, layout.clone(), tx.clone());
         Self {
             table_name: table_name.into(),
-            tx,
             layout,
             stat_info,
         }
     }
 }
 
-impl<'lm, 'bm> Plan for TablePlan<'lm, 'bm> {
-    fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
+impl Plan for TablePlan {
+    fn open<'lm, 'bm, 'scan>(
+        &self,
+        tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
+    ) -> Box<dyn UpdateScan + 'scan>
+    where
+        'lm: 'scan,
+        'bm: 'scan,
+    {
         Box::new(TableScan::new(
-            self.tx.clone(),
-            &self.table_name,
+            tx.clone(),
+            self.table_name.clone(),
             self.layout.clone(),
         ))
     }
@@ -88,8 +99,15 @@ impl<'p> SelectPlan<'p> {
 }
 
 impl<'p> Plan for SelectPlan<'p> {
-    fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
-        let s = self.plan.open();
+    fn open<'lm, 'bm, 'scan>(
+        &self,
+        tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
+    ) -> Box<dyn UpdateScan + 'scan>
+    where
+        'lm: 'scan,
+        'bm: 'scan,
+    {
+        let s = self.plan.open(tx);
         Box::new(SelectScan::new(s, self.pred.clone()))
     }
 
@@ -137,8 +155,15 @@ impl<'p> ProjectPlan<'p> {
 }
 
 impl<'p> Plan for ProjectPlan<'p> {
-    fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
-        let scan = self.plan.open();
+    fn open<'lm, 'bm, 'scan>(
+        &self,
+        tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
+    ) -> Box<dyn UpdateScan + 'scan>
+    where
+        'lm: 'scan,
+        'bm: 'scan,
+    {
+        let scan = self.plan.open(tx);
         let fields: Vec<String> = self.schema.fields_iter().map(|f| f.into()).collect();
         Box::new(ProjectScan::new(scan, fields))
     }
@@ -160,14 +185,14 @@ impl<'p> Plan for ProjectPlan<'p> {
     }
 }
 
-pub struct ProductPlan<'p1, 'p2> {
-    plan1: Box<dyn Plan + 'p1>,
-    plan2: Box<dyn Plan + 'p2>,
+pub struct ProductPlan<'p> {
+    plan1: Box<dyn Plan + 'p>,
+    plan2: Box<dyn Plan + 'p>,
     schema: Schema,
 }
 
-impl<'p1, 'p2> ProductPlan<'p1, 'p2> {
-    pub fn new(plan1: Box<dyn Plan + 'p1>, plan2: Box<dyn Plan + 'p2>) -> Self {
+impl<'p> ProductPlan<'p> {
+    pub fn new(plan1: Box<dyn Plan + 'p>, plan2: Box<dyn Plan + 'p>) -> Self {
         let mut schema = Schema::new();
         schema.add_all(&plan1.schema());
         schema.add_all(&plan2.schema());
@@ -179,10 +204,17 @@ impl<'p1, 'p2> ProductPlan<'p1, 'p2> {
     }
 }
 
-impl<'p1, 'p2> Plan for ProductPlan<'p1, 'p2> {
-    fn open<'s>(&'s self) -> Box<dyn UpdateScan + 's> {
-        let s1 = self.plan1.open();
-        let s2 = self.plan2.open();
+impl<'p> Plan for ProductPlan<'p> {
+    fn open<'lm, 'bm, 'scan>(
+        &self,
+        tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
+    ) -> Box<dyn UpdateScan + 'scan>
+    where
+        'lm: 'scan,
+        'bm: 'scan,
+    {
+        let s1 = self.plan1.open(tx.clone());
+        let s2 = self.plan2.open(tx.clone());
         Box::new(ProductScan::new(s1, s2))
     }
 
@@ -247,7 +279,7 @@ mod tests {
                 {
                     // dept
                     let layout = mdm.table_layout("dept", tx.clone()).unwrap();
-                    let mut ts = TableScan::new(tx.clone(), "dept", layout);
+                    let mut ts = TableScan::new(tx.clone(), "dept".into(), layout);
                     ts.insert().unwrap();
                     ts.set_i32("did", 1).unwrap();
                     ts.set_string("dname", "Math".into()).unwrap();
@@ -258,7 +290,7 @@ mod tests {
                 {
                     // student
                     let layout = mdm.table_layout("student", tx.clone()).unwrap();
-                    let mut ts = TableScan::new(tx.clone(), "student", layout);
+                    let mut ts = TableScan::new(tx.clone(), "student".into(), layout);
                     ts.insert().unwrap();
                     ts.set_i32("sid", 1).unwrap();
                     ts.set_string("sname", "Tom".into()).unwrap();
@@ -283,7 +315,7 @@ mod tests {
                 let pred = Predicate::new(expr);
                 let p4 = SelectPlan::new(p3, pred);
                 {
-                    let mut s = p4.open();
+                    let mut s = p4.open(tx.clone());
                     assert!(s.before_first().is_ok());
                     assert!(s.next().unwrap());
                     assert_eq!(s.get_i32("sid").unwrap(), 1);

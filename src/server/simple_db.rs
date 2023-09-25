@@ -23,7 +23,7 @@ pub struct SimpleDB<'lm, 'bm> {
     tn: TxNumber,
     lt: Arc<LockTable>,
     mm: Option<Arc<MetadataMgr>>,
-    planner: Option<Arc<Planner<BasicQueryPlanner, BasicUpdatePlanner>>>,
+    planner: Option<Arc<Planner>>,
 }
 
 impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
@@ -112,7 +112,7 @@ impl<'lm, 'bm> SimpleDB<'lm, 'bm> {
         self.mm.as_ref().unwrap().clone()
     }
 
-    pub fn planner(&self) -> Arc<Planner<BasicQueryPlanner, BasicUpdatePlanner>> {
+    pub fn planner(&self) -> Arc<Planner> {
         self.planner.as_ref().unwrap().clone()
     }
 }

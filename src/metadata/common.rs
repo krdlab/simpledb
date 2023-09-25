@@ -11,6 +11,9 @@ pub enum MetadataError {
     #[error("table not found: {0}")]
     TableNotFound(String),
 
+    #[error("table already exists: {0}")]
+    TableAlreadyExists(String),
+
     #[error("view not found: {0}")]
     ViewNotFound(String),
 

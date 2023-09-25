@@ -43,7 +43,7 @@ pub trait QueryPlanner {
         &'s self,
         data: QueryData,
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Box<dyn Plan + 's>;
+    ) -> Box<dyn Plan + '_>;
 }
 
 pub trait UpdatePlanner {
@@ -51,7 +51,7 @@ pub trait UpdatePlanner {
         &self,
         data: UpdateCmd,
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32>;
+    ) -> Result<u64>;
 }
 
 // query impl
@@ -71,7 +71,7 @@ impl QueryPlanner for BasicQueryPlanner {
         &'s self,
         data: QueryData,
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Box<dyn Plan + 's> {
+    ) -> Box<dyn Plan + '_> {
         let mut plans = Vec::new();
         for table_name in data.tables() {
             if let Ok(viewdef) = self.mdm.view_def(table_name, tx.clone()) {
@@ -87,15 +87,13 @@ impl QueryPlanner for BasicQueryPlanner {
             }
         }
 
-        let mut p = plans
+        let mut plan = plans
             .into_iter()
             .reduce(|acc, p| Box::new(ProductPlan::new(acc, p)))
             .unwrap();
-        p = Box::new(SelectPlan::new(p, data.pred().clone()));
-        Box::new(ProjectPlan::new(
-            p,
-            data.fields().iter().map(|f| &**f).collect(),
-        ))
+        plan = Box::new(SelectPlan::new(plan, data.pred().clone()));
+        let fields = data.fields().iter().map(|f| &**f).collect();
+        Box::new(ProjectPlan::new(plan, fields))
     }
 }
 
@@ -116,7 +114,7 @@ impl UpdatePlanner for BasicUpdatePlanner {
         &self,
         data: UpdateCmd,
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         match data {
             UpdateCmd::DeleteData { table_name, pred } => {
                 self.execute_delete(table_name, pred, &tx)
@@ -153,10 +151,10 @@ impl BasicUpdatePlanner {
         table_name: String,
         pred: Predicate,
         tx: &Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         let tp = Box::new(TablePlan::new(tx.clone(), &table_name, self.mdm.clone()));
         let sp = SelectPlan::new(tp, pred);
-        let mut s = sp.open();
+        let mut s = sp.open(tx.clone());
         let mut count = 0;
         while s.next()? {
             s.delete()?;
@@ -172,10 +170,10 @@ impl BasicUpdatePlanner {
         value: &Term,
         pred: Predicate,
         tx: &Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         let tp = Box::new(TablePlan::new(tx.clone(), table_name, self.mdm.clone()));
         let sp = SelectPlan::new(tp, pred);
-        let mut s = sp.open();
+        let mut s = sp.open(tx.clone());
         let mut count = 0;
         while s.next()? {
             let new_value = value.evaluate(&s);
@@ -191,9 +189,9 @@ impl BasicUpdatePlanner {
         fields: &Vec<String>,
         values: &Vec<Constant>,
         tx: &Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         let p = TablePlan::new(tx.clone(), table_name, self.mdm.clone());
-        let mut s = p.open();
+        let mut s = p.open(tx.clone());
         s.insert()?;
         let mut v = values.iter();
         for f in fields {
@@ -208,7 +206,7 @@ impl BasicUpdatePlanner {
         table_name: &str,
         schema: Schema,
         tx: &Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         self.mdm.create_table(table_name, schema, tx.clone())?;
         Ok(0)
     }
@@ -218,7 +216,7 @@ impl BasicUpdatePlanner {
         view_name: &str,
         query: &QueryData,
         tx: &Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         self.mdm
             .create_view(view_name, &query.to_string(), tx.clone())?;
         Ok(0)
@@ -230,45 +228,39 @@ impl BasicUpdatePlanner {
         table_name: &str,
         field: &str,
         tx: &Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         self.mdm
             .create_index(index_name, table_name, field, tx.clone())?;
         Ok(0)
     }
 }
 
-pub struct Planner<Q, U>
-where
-    Q: QueryPlanner,
-    U: UpdatePlanner,
-{
-    qp: Q,
-    up: U,
+pub struct Planner {
+    qp: Box<dyn QueryPlanner + Send + Sync>,
+    up: Box<dyn UpdatePlanner + Send + Sync>,
 }
 
-impl<'s, Q, U> Planner<Q, U>
-where
-    Q: QueryPlanner,
-    U: UpdatePlanner,
-{
-    pub fn new(qp: Q, up: U) -> Self {
-        Self { qp, up }
+impl<'s> Planner {
+    pub fn new(
+        qp: impl QueryPlanner + Send + Sync + 'static,
+        up: impl UpdatePlanner + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            qp: Box::new(qp),
+            up: Box::new(up),
+        }
     }
 
-    pub fn create_query_plan<'p, 'lm: 's, 'bm: 's>(
+    pub fn create_query_plan<'lm: 's, 'bm: 's>(
         &'s self,
         query: &str,
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<Box<dyn Plan + 'p>>
-    where
-        's: 'p,
-        'lm: 'p,
-        'bm: 'p,
-    {
+    ) -> Result<Box<dyn Plan + '_>> {
         let mut parser = Parser::new(query)?;
-        let data = parser.query()?;
-        self.verify_query(&data);
-        Ok(self.qp.create_plan(data, tx))
+        let qry = parser.query()?;
+        self.verify_query(&qry);
+        let plan = self.qp.create_plan(qry, tx);
+        Ok(plan)
     }
 
     fn verify_query(&self, data: &QueryData) {
@@ -279,10 +271,11 @@ where
         &self,
         command: &str,
         tx: Rc<RefCell<Transaction<'lm, 'bm>>>,
-    ) -> Result<i32> {
+    ) -> Result<u64> {
         let mut parser = Parser::new(command)?;
         let cmd = parser.update_cmd()?;
         self.verify_update(&cmd);
+
         self.up.execute(cmd, tx)
     }
 
@@ -317,7 +310,7 @@ mod tests {
 
                 let query = "select B from T1 where A = 10";
                 let plan = planner.create_query_plan(query, tx.clone()).unwrap();
-                let mut scan = plan.open();
+                let mut scan = plan.open(tx.clone());
                 assert!(scan.next().unwrap());
                 assert_eq!(scan.get_string("b").unwrap(), "rec10"); // TODO: case insensitive
                 assert!(!scan.next().unwrap());
@@ -355,7 +348,7 @@ mod tests {
 
                 let query = "select B, D from T1, T2 where A = C";
                 let plan = planner.create_query_plan(query, tx.clone()).unwrap();
-                let mut scan = plan.open();
+                let mut scan = plan.open(tx.clone());
                 while scan.next().unwrap() {
                     assert_eq!(scan.get_string("b").unwrap(), scan.get_string("d").unwrap());
                     // TODO: case insensitive
