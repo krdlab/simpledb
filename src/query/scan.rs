@@ -57,8 +57,20 @@ impl RID {
         RID { blknum, slot }
     }
 
+    pub fn from_index(block_num: i32, slot: i32) -> Self {
+        let blknum = block_num.into();
+        Self {
+            blknum,
+            slot: Some(slot),
+        }
+    }
+
     pub fn block_number(&self) -> i64 {
         self.blknum
+    }
+
+    pub fn block_number_as_i32(&self) -> i32 {
+        self.blknum.try_into().unwrap()
     }
 
     pub fn slot(&self) -> Option<i32> {
@@ -69,5 +81,26 @@ impl RID {
 impl Display for RID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}, {:?}]", self.blknum, self.slot)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RID;
+
+    #[test]
+    fn test_rid_basic() {
+        let rid = RID::new(-1, Some(0));
+
+        assert_eq!(rid.block_number(), -1);
+        assert_eq!(rid.slot(), Some(0));
+    }
+
+    #[test]
+    fn test_rid_i32() {
+        let rid = RID::from_index(i32::MAX, i32::MAX);
+        assert_eq!(rid.block_number(), i32::MAX as i64);
+        assert_eq!(rid.block_number_as_i32(), i32::MAX);
+        assert_eq!(rid.slot(), Some(i32::MAX));
     }
 }

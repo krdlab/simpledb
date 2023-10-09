@@ -6,6 +6,7 @@
 mod buffer_mgr;
 mod constants;
 mod file;
+mod index;
 mod log_mgr;
 mod metadata;
 mod parse;
