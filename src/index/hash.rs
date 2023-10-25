@@ -137,10 +137,9 @@ impl<'lm, 'bm> Drop for HashIndex<'lm, 'bm> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        record::{
-            schema::{Layout, Schema},
-            table_scan::TableScan,
-        },
+        index::Index,
+        plan::plan::{Plan, TablePlan},
+        query::predicate::Constant,
         server::simple_db::SimpleDB,
     };
     use tempfile::tempdir;
@@ -149,23 +148,46 @@ mod tests {
     fn test() {
         let dir = tempdir().unwrap();
         {
-            let db = SimpleDB::new_for_test(dir.path(), "hash_index_test.log");
+            let mut db = SimpleDB::new_for_test(dir.path(), "hash_index_test.log");
+            db.init();
 
-            let mut schema = Schema::new();
-            schema.add_i32_field("A");
-            schema.add_string_field("B", 9);
-            let layout = Layout::new(schema);
-
+            let mdm = db.metadata_mgr();
+            let planner = db.planner();
             let tx = db.new_tx();
             {
-                let mut ts = TableScan::new(tx.clone(), "T".into(), layout.clone());
-                for i in 0..50 {
-                    ts.insert().unwrap();
-                    ts.set_i32("A", i).unwrap();
-                    ts.set_string("B", format!("rec{i}")).unwrap();
+                // 1. prepare table 'T'
+                {
+                    planner
+                        .execute_update("create table T (A int, B varchar(9))", tx.clone())
+                        .unwrap();
+                    for i in 0..50 {
+                        let cmd = format!("insert into T (A, B) values ({i}, 'rec{i}')");
+                        planner.execute_update(&cmd, tx.clone()).unwrap();
+                    }
+                    planner
+                        .execute_update("create index T_A_idx on T (A)", tx.clone())
+                        .unwrap();
                 }
 
-                // TODO:
+                // 2. retrieve T's records
+                {
+                    let table_name = "t"; // NOTE: tokenizer is lower case mode
+
+                    let tp = TablePlan::new(tx.clone(), table_name, mdm.clone());
+                    let mut ts = tp.open(tx.clone());
+
+                    let indexes = mdm.table_index_info(table_name, tx.clone()).unwrap();
+                    {
+                        let info = indexes.get("a".into()).unwrap();
+                        let mut index = info.open();
+                        index.before_first(tx.clone(), Constant::Int(20));
+                        while index.next().unwrap() {
+                            let rid = index.rid().unwrap();
+                            ts.move_to_rid(rid).unwrap();
+                            assert_eq!(ts.get_string("b").unwrap(), "rec20");
+                        }
+                    }
+                }
             }
             tx.borrow_mut().commit().unwrap();
         }

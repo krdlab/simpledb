@@ -40,4 +40,4 @@ pub trait Index<'lm, 'bm> {
     fn close(&mut self);
 }
 
-mod hash;
+pub mod hash;

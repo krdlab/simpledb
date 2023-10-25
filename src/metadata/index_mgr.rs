@@ -9,6 +9,7 @@ use super::{
     table_mgr::{TableMgr, MAX_NAME_LENGTH},
 };
 use crate::{
+    index::{hash::HashIndex, Index},
     record::{
         schema::{Layout, Schema, SqlType},
         table_scan::TableScan,
@@ -16,29 +17,6 @@ use crate::{
     tx::transaction::Transaction,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
-
-/* FIXME: begin draft implementations */
-pub trait Index {}
-struct HashIndex<'ly> {
-    _index_name: String,
-    _layout: &'ly Layout,
-}
-impl<'ly> HashIndex<'ly> {
-    const NUM_BUCKETS: usize = 100;
-
-    pub fn new(index_name: impl Into<String>, layout: &'ly Layout) -> Self {
-        Self {
-            _index_name: index_name.into(),
-            _layout: layout,
-        }
-    }
-
-    pub fn search_cost(num_blocks: usize, _rec_per_blk: usize) -> usize {
-        num_blocks / HashIndex::NUM_BUCKETS
-    }
-}
-impl<'ly> Index for HashIndex<'ly> {}
-/* FIXME: end draft implementations */
 
 pub struct IndexInfo {
     index_name: String,
@@ -83,8 +61,10 @@ impl IndexInfo {
         Layout::new(schema)
     }
 
-    pub fn open(&self) -> Box<dyn Index + '_> {
-        Box::new(HashIndex::new(&self.index_name, &self.index_layout))
+    pub fn open<'lm, 'bm>(&self) -> impl Index<'lm, 'bm> {
+        let index_name = self.index_name.to_owned();
+        let index_layout = self.index_layout.to_owned();
+        HashIndex::new(index_name, index_layout)
     }
 
     pub fn blocks_accessed(&self) -> usize {
@@ -151,13 +131,13 @@ impl IndexMgr {
 
     pub fn index_info(
         &self,
-        table_name: &str,
+        table_name: String,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<HashMap<String, IndexInfo>> {
         let mut result = HashMap::new();
 
         let idx_fld_pairs = {
-            let tblname: String = table_name.into();
+            let tblname: String = table_name.clone();
             let mut names = Vec::new();
 
             let layout = self.index_catalog_layout(&tx)?;
@@ -175,10 +155,10 @@ impl IndexMgr {
         };
 
         for (idxname, fldname) in idx_fld_pairs {
-            let tbl_layout = self.tm.layout(table_name, tx.clone()).unwrap();
-            let tbl_stat_info = self
-                .sm
-                .table_stat_info(table_name, tbl_layout.clone(), tx.clone());
+            let tbl_layout = self.tm.layout(&table_name, tx.clone()).unwrap();
+            let tbl_stat_info =
+                self.sm
+                    .table_stat_info(&table_name, tbl_layout.clone(), tx.clone());
             let index_info = IndexInfo::new(
                 &idxname,
                 &fldname,
@@ -226,7 +206,7 @@ mod tests {
                 im.create_index("my-index", "MyTable", "id", tx.clone())
                     .unwrap();
 
-                let ii_map = im.index_info("MyTable", tx.clone()).unwrap();
+                let ii_map = im.index_info("MyTable".into(), tx.clone()).unwrap();
                 assert_eq!(ii_map.len(), 1);
 
                 let id = ii_map.get("id").unwrap();

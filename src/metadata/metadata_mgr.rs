@@ -89,7 +89,7 @@ impl MetadataMgr {
         table_name: &str,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<HashMap<String, IndexInfo>> {
-        self.im.index_info(table_name, tx)
+        self.im.index_info(table_name.into(), tx)
     }
 
     pub fn table_stat_info(
