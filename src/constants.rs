@@ -6,3 +6,4 @@
 use std::mem::size_of;
 
 pub const I32_BYTE_SIZE: i32 = size_of::<i32>() as i32; // TODO: change to usize
+pub const I32_BYTES_USIZE: usize = size_of::<i32>();

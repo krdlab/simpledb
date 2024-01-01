@@ -40,4 +40,5 @@ pub trait Index<'lm, 'bm> {
     fn close(&mut self);
 }
 
+pub mod btree_page;
 pub mod hash;
