@@ -19,8 +19,8 @@ pub enum BTreePageError {
     #[error("{0:?}")]
     Transaction(#[from] TransactionError),
 
-    #[error("BtreePage.current_block is none")]
-    BlockNotFound,
+    #[error("current_block is none")]
+    BlockIsNone,
 }
 
 pub type Result<T> = core::result::Result<T, BTreePageError>;
@@ -80,7 +80,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow_mut().set_i32(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             0,
             flag,
             true,
@@ -91,7 +91,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow().get_i32(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             0,
         )?)
     }
@@ -138,7 +138,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         let block_id = self.tx.borrow_mut().append(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?
+                .ok_or(BTreePageError::BlockIsNone)?
                 .filename(),
         )?;
         self.tx.borrow_mut().pin(&block_id)?;
@@ -186,7 +186,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow_mut().set_i32(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             I32_BYTES_USIZE,
             num,
             true,
@@ -197,7 +197,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow_mut().get_i32(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             I32_BYTES_USIZE,
         )?)
     }
@@ -224,7 +224,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow_mut().set_i32(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             pos,
             val,
             true,
@@ -236,7 +236,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow_mut().set_string(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             pos,
             &val,
             true,
@@ -261,7 +261,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow().get_i32(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             pos,
         )?)
     }
@@ -271,7 +271,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         Ok(self.tx.borrow().get_string(
             self.current_block
                 .as_ref()
-                .ok_or(BTreePageError::BlockNotFound)?,
+                .ok_or(BTreePageError::BlockIsNone)?,
             pos,
         )?)
     }
@@ -319,6 +319,7 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
 #[cfg(test)]
 mod tests {
     use super::BTreePage;
+    use super::BTreePageError;
     use crate::{
         record::schema::{Layout, Schema},
         server::simple_db::SimpleDB,
@@ -343,6 +344,12 @@ mod tests {
                 };
                 let mut page = BTreePage::new(tx.clone(), block_id, layout).unwrap();
                 page.close();
+
+                let res = page.get_flag();
+                assert_eq!(
+                    BTreePageError::BlockIsNone.to_string(),
+                    res.err().unwrap().to_string()
+                );
 
                 // TODO: add more testcases
             }
