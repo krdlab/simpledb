@@ -40,6 +40,7 @@ pub trait Index<'lm, 'bm> {
     fn close(&mut self);
 }
 
+pub mod btree_dir;
 pub mod btree_dir_entry;
 pub mod btree_leaf;
 pub mod btree_page;
