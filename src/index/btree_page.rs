@@ -56,8 +56,8 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
     pub fn close(&mut self) {
         if let Some(block) = self.current_block.as_ref() {
             self.tx.borrow_mut().unpin(block);
+            self.current_block = None;
         }
-        self.current_block = None;
     }
 
     pub fn is_full(&self) -> Result<bool> {
@@ -313,6 +313,12 @@ impl<'lm, 'bm> BTreePage<'lm, 'bm> {
         self.set_i32(slot, "block", rid.block_number_as_i32())?;
         self.set_i32(slot, "id", rid.slot().unwrap())?;
         Ok(())
+    }
+}
+
+impl<'lm, 'bm> Drop for BTreePage<'lm, 'bm> {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 

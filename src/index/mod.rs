@@ -3,6 +3,7 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
+use self::btree_page::BTreePageError;
 use crate::{
     query::{
         predicate::Constant,
@@ -17,6 +18,9 @@ use thiserror::Error;
 pub enum IndexError {
     #[error("{0}")]
     ScanFailed(#[from] ScanError),
+
+    #[error("{0}")]
+    BTreeFailed(#[from] BTreePageError),
 }
 
 pub type Result<T> = std::result::Result<T, IndexError>;
@@ -40,6 +44,7 @@ pub trait Index<'lm, 'bm> {
     fn close(&mut self);
 }
 
+pub mod btree;
 pub mod btree_dir;
 pub mod btree_dir_entry;
 pub mod btree_leaf;

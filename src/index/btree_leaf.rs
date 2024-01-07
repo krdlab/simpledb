@@ -132,6 +132,12 @@ impl<'lm, 'bm> BTreeLeaf<'lm, 'bm> {
     }
 }
 
+impl<'lm, 'bm> Drop for BTreeLeaf<'lm, 'bm> {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

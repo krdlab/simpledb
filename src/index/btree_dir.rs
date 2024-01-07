@@ -104,6 +104,12 @@ impl<'lm, 'bm> BTreeDir<'lm, 'bm> {
     }
 }
 
+impl<'lm, 'bm> Drop for BTreeDir<'lm, 'bm> {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
