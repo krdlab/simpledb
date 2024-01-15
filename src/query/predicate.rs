@@ -9,7 +9,7 @@ use crate::{plan::plan::Plan, record::schema::Schema};
 
 use super::scan::UpdateScan;
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Hash)]
 pub enum Constant {
     Int(i32),
     String(String),
@@ -214,7 +214,14 @@ impl Display for Predicate {
 #[cfg(test)]
 mod tests {
     use super::Term;
-    use crate::{query::predicate::Expression, record::schema::Schema};
+    use crate::{
+        query::predicate::{Constant, Expression},
+        record::schema::Schema,
+    };
+    use std::{
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+    };
 
     #[test]
     fn test_constant_partialeq() {
@@ -232,6 +239,43 @@ mod tests {
         assert!(Int(0) > Int(-1));
         assert!(String("abc".into()) < String("abd".into()));
         assert!(String("abd".into()) > String("abc".into()));
+    }
+
+    #[test]
+    fn test_constant_int_hash() {
+        let h1 = {
+            let mut hasher = DefaultHasher::new();
+            Constant::Int(-1).hash(&mut hasher);
+            hasher.finish()
+        };
+        let h2 = {
+            let mut hasher = DefaultHasher::new();
+            Constant::Int(-1).hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_constant_string_hash() {
+        let h1 = {
+            let mut hasher = DefaultHasher::new();
+            Constant::String("あいう".into()).hash(&mut hasher);
+            hasher.finish()
+        };
+        let h2 = {
+            let mut hasher = DefaultHasher::new();
+            Constant::String("あいう".into()).hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(h1, h2);
+
+        let h3 = {
+            let mut hasher = DefaultHasher::new();
+            Constant::String("あいうa".into()).hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_ne!(h2, h3);
     }
 
     #[test]
