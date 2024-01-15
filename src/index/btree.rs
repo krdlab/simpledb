@@ -88,7 +88,7 @@ impl<'lm, 'bm> Index<'lm, 'bm> for BTreeIndex<'lm, 'bm> {
     }
 
     fn next(&mut self) -> super::Result<bool> {
-        self.next()
+        Ok(self.leaf.as_mut().map(|leaf| leaf.next()).unwrap()?)
     }
 
     fn rid(&self) -> super::Result<crate::query::scan::RID> {
@@ -151,8 +151,62 @@ impl<'lm, 'bm> Index<'lm, 'bm> for BTreeIndex<'lm, 'bm> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        index::IndexType,
+        plan::plan::{Plan, TablePlan},
+        query::predicate::Constant,
+        server::simple_db::SimpleDB,
+    };
+    use tempfile::tempdir;
+
     #[test]
     fn test() {
-        // TODO:
+        let dir = tempdir().unwrap();
+        {
+            let mut db = SimpleDB::new_for_test(dir.path(), "btree_index_test.log");
+            db.init();
+
+            let mdm = db.metadata_mgr();
+            let planner = db.planner();
+            let tx = db.new_tx();
+            {
+                // 1. prepare table 'T'
+                {
+                    planner
+                        .execute_update("create table T (A int, B varchar(9))", tx.clone())
+                        .unwrap();
+                    for i in 0..50 {
+                        let cmd = format!("insert into T (A, B) values ({i}, 'rec{i}')");
+                        planner.execute_update(&cmd, tx.clone()).unwrap();
+                    }
+                    planner
+                        .execute_update("create index T_A_idx on T (A)", tx.clone())
+                        .unwrap();
+                }
+
+                // 2. retrieve T's records
+                {
+                    let table_name = "t"; // NOTE: tokenizer is lower case mode
+
+                    let tp = TablePlan::new(tx.clone(), table_name, mdm.clone());
+                    let mut ts = tp.open(tx.clone());
+
+                    let indexes = mdm
+                        .table_index_info(IndexType::BTree, table_name, tx.clone())
+                        .unwrap();
+                    {
+                        let info = indexes.get("a".into()).unwrap();
+                        let mut index = info.open(tx.clone());
+                        index.before_first(tx.clone(), Constant::Int(20));
+                        while index.next().unwrap() {
+                            let rid = index.rid().unwrap();
+                            ts.move_to_rid(rid).unwrap();
+                            assert_eq!(ts.get_string("b").unwrap(), "rec20");
+                        }
+                    }
+                }
+            }
+            tx.borrow_mut().commit().unwrap();
+        }
     }
 }

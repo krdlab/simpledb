@@ -137,7 +137,7 @@ impl<'lm, 'bm> Drop for HashIndex<'lm, 'bm> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        index::Index,
+        index::IndexType,
         plan::plan::{Plan, TablePlan},
         query::predicate::Constant,
         server::simple_db::SimpleDB,
@@ -176,10 +176,12 @@ mod tests {
                     let tp = TablePlan::new(tx.clone(), table_name, mdm.clone());
                     let mut ts = tp.open(tx.clone());
 
-                    let indexes = mdm.table_index_info(table_name, tx.clone()).unwrap();
+                    let indexes = mdm
+                        .table_index_info(IndexType::Hash, table_name, tx.clone())
+                        .unwrap();
                     {
                         let info = indexes.get("a".into()).unwrap();
-                        let mut index = info.open();
+                        let mut index = info.open(tx.clone());
                         index.before_first(tx.clone(), Constant::Int(20));
                         while index.next().unwrap() {
                             let rid = index.rid().unwrap();

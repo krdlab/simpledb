@@ -9,7 +9,7 @@ use super::{
     table_mgr::{TableMgr, MAX_NAME_LENGTH},
 };
 use crate::{
-    index::{hash::HashIndex, Index},
+    index::{btree::BTreeIndex, hash::HashIndex, Index, IndexType},
     record::{
         schema::{Layout, Schema, SqlType},
         table_scan::TableScan,
@@ -19,6 +19,7 @@ use crate::{
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 pub struct IndexInfo {
+    index_type: IndexType,
     index_name: String,
     field_name: String,
     _table_schema: Schema,
@@ -29,6 +30,7 @@ pub struct IndexInfo {
 
 impl IndexInfo {
     pub fn new(
+        index_type: IndexType,
         index_name: &str,
         field_name: &str,
         table_schema: Schema,
@@ -37,6 +39,7 @@ impl IndexInfo {
     ) -> Self {
         let index_layout = IndexInfo::create_index_layout(&table_schema, field_name);
         Self {
+            index_type,
             index_name: index_name.into(),
             field_name: field_name.into(),
             _table_schema: table_schema,
@@ -61,10 +64,16 @@ impl IndexInfo {
         Layout::new(schema)
     }
 
-    pub fn open<'lm, 'bm>(&self) -> impl Index<'lm, 'bm> {
+    pub fn open<'tx>(
+        &self,
+        tx: Rc<RefCell<Transaction<'tx, 'tx>>>,
+    ) -> Box<dyn Index<'tx, 'tx> + 'tx> {
         let index_name = self.index_name.to_owned();
         let index_layout = self.index_layout.to_owned();
-        HashIndex::new(index_name, index_layout)
+        match self.index_type {
+            IndexType::BTree => Box::new(BTreeIndex::new(tx, index_name, index_layout).unwrap()),
+            IndexType::Hash => Box::new(HashIndex::new(index_name, index_layout)),
+        }
     }
 
     pub fn blocks_accessed(&self) -> usize {
@@ -131,6 +140,7 @@ impl IndexMgr {
 
     pub fn index_info(
         &self,
+        index_type: IndexType,
         table_name: String,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<HashMap<String, IndexInfo>> {
@@ -160,6 +170,7 @@ impl IndexMgr {
                 self.sm
                     .table_stat_info(&table_name, tbl_layout.clone(), tx.clone());
             let index_info = IndexInfo::new(
+                index_type,
                 &idxname,
                 &fldname,
                 tbl_layout.schema().clone(),
@@ -177,6 +188,7 @@ impl IndexMgr {
 mod tests {
     use super::IndexMgr;
     use crate::{
+        index::IndexType,
         metadata::{stat_mgr::StatMgr, table_mgr::TableMgr},
         record::schema::Schema,
         server::simple_db::SimpleDB,
@@ -206,7 +218,9 @@ mod tests {
                 im.create_index("my-index", "MyTable", "id", tx.clone())
                     .unwrap();
 
-                let ii_map = im.index_info("MyTable".into(), tx.clone()).unwrap();
+                let ii_map = im
+                    .index_info(IndexType::Hash, "MyTable".into(), tx.clone())
+                    .unwrap();
                 assert_eq!(ii_map.len(), 1);
 
                 let id = ii_map.get("id").unwrap();

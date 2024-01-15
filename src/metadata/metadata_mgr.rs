@@ -11,6 +11,7 @@ use super::{
     view_mgr::ViewMgr,
 };
 use crate::{
+    index::IndexType,
     record::schema::{Layout, Schema},
     tx::transaction::Transaction,
 };
@@ -86,10 +87,11 @@ impl MetadataMgr {
 
     pub fn table_index_info(
         &self,
+        index_type: IndexType,
         table_name: &str,
         tx: Rc<RefCell<Transaction>>,
     ) -> Result<HashMap<String, IndexInfo>> {
-        self.im.index_info(table_name.into(), tx)
+        self.im.index_info(index_type, table_name.into(), tx)
     }
 
     pub fn table_stat_info(
@@ -105,6 +107,7 @@ impl MetadataMgr {
 #[cfg(test)]
 mod tests {
     use crate::{
+        index::IndexType,
         record::{
             schema::{Schema, SqlType},
             table_scan::TableScan,
@@ -180,7 +183,9 @@ mod tests {
                             .unwrap();
                         mm.create_index("indexB", "MyTable", "B", tx.clone())
                             .unwrap();
-                        let indexes = mm.table_index_info("MyTable", tx.clone()).unwrap();
+                        let indexes = mm
+                            .table_index_info(IndexType::Hash, "MyTable", tx.clone())
+                            .unwrap();
                         assert_eq!(indexes.len(), 2);
                         {
                             let index_a = indexes.get("A").unwrap();

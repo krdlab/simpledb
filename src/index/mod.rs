@@ -44,6 +44,12 @@ pub trait Index<'lm, 'bm> {
     fn close(&mut self);
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum IndexType {
+    BTree,
+    Hash,
+}
+
 pub mod btree;
 pub mod btree_dir;
 pub mod btree_dir_entry;
